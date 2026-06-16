@@ -1,0 +1,22 @@
+# OS / 편집기
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# 로그
+*.log
+
+# Node (추후 esbuild 등 빌드 도구 도입 대비)
+node_modules/
+dist/
+
+# 로컬 환경 / 시크릿 (확장에는 토큰/키를 넣지 않지만 방어적으로)
+.env
+.env.local
+.env.*.local
+
+# 확장 패키징 산출물
+*.zip
+*.crx
+*.pem
