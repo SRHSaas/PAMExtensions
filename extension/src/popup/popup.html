@@ -111,7 +111,8 @@
         display: flex; justify-content: space-between; align-items: center;
       }
       a { color: var(--accent); text-decoration: none; cursor: pointer; }
-      .hidden { display: none; }
+      /* 유틸리티 hide — 뒤에 정의된 .dates(display:flex) 등을 확실히 덮도록 !important. */
+      .hidden { display: none !important; }
       fieldset {
         border: 1px solid var(--border);
         border-radius: 8px;
