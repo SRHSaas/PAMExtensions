@@ -1,0 +1,56 @@
+{
+  "source": "miraeasset",
+  "schema_version": 1,
+  "accounts": [
+    {
+      "account_no": "123456789012",
+      "account_type": "위탁",
+      "alias": "위탁"
+    },
+    {
+      "account_no": "123456789013",
+      "account_type": "연금저축",
+      "alias": "연금저축"
+    }
+  ],
+  "daily_assets": [
+    {
+      "date": "2026-06-16",
+      "account_no": "123456789012",
+      "total_asset": 152340210,
+      "eval_amount": 148920000,
+      "profit_loss": 12450300,
+      "profit_rate": "9.12%"
+    },
+    {
+      "date": "2026-06-16",
+      "account_no": "123456789013",
+      "total_asset": 23100000,
+      "eval_amount": 22800000,
+      "profit_loss": -540000,
+      "profit_rate": "-2.31%"
+    }
+  ],
+  "daily_holdings": [
+    {
+      "date": "2026-06-16",
+      "name": "삼성전자",
+      "category": "국내주식",
+      "quantity": 300,
+      "buy_amount": 21000000,
+      "eval_amount": 23400000,
+      "profit_loss": 2400000,
+      "profit_rate": "11.43%"
+    },
+    {
+      "date": "2026-06-16",
+      "name": "TIGER 미국S&P500",
+      "category": "국내ETF",
+      "quantity": 150,
+      "buy_amount": 2100000,
+      "eval_amount": 1980000,
+      "profit_loss": -120000,
+      "profit_rate": "-5.71%"
+    }
+  ]
+}

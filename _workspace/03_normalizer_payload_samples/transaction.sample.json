@@ -1,0 +1,65 @@
+{
+  "source": "miraeasset",
+  "schema_version": 1,
+  "accounts": [
+    {
+      "account_no": "123456789012",
+      "account_type": null,
+      "alias": "123-4567-8901-2 주식계좌"
+    }
+  ],
+  "transactions": [
+    {
+      "date": "2026-05-20",
+      "account_no": "123456789012",
+      "type": "해외주식매수",
+      "name": "APPLE INC (소수)",
+      "quantity": 0.5,
+      "amount": 98500,
+      "foreign_amount": 72.34,
+      "fee": 150,
+      "balance": 1204330,
+      "unit_price": 144.68,
+      "broker_quantity": 500000,
+      "exchange_rate": 1361.5,
+      "currency": "USD",
+      "detail": {
+        "src": "hkd1004.list",
+        "tr_srno": "00012",
+        "tr_q_raw": "500000",
+        "tr_upr": "144.68",
+        "curr_cd": "USD",
+        "bas_exr": "1361.50",
+        "frc_tr_a_precise": "72.340000",
+        "frc_fee_precise": "0.110000"
+      }
+    },
+    {
+      "date": "2026-05-18",
+      "account_no": "123456789012",
+      "type": "배당금입금",
+      "name": "리얼티인컴",
+      "quantity": 0,
+      "amount": 13420,
+      "foreign_amount": 9.86,
+      "fee": 0,
+      "balance": 1302830,
+      "unit_price": null,
+      "broker_quantity": null,
+      "exchange_rate": null,
+      "currency": "USD",
+      "detail": null
+    }
+  ],
+  "dividends": [
+    {
+      "date": "2026-05-18",
+      "account_no": "123456789012",
+      "type": "배당금입금",
+      "name": "리얼티인컴",
+      "amount": 13420,
+      "foreign_amount": 9.86,
+      "fee": 0
+    }
+  ]
+}
