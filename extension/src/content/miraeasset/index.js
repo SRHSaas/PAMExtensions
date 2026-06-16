@@ -41,6 +41,7 @@ const MSG = Object.freeze({
   SCRAPE_REQUEST: "SCRAPE_REQUEST",
   SCRAPE_RESULT: "SCRAPE_RESULT",
   INJECT_BRIDGE: "INJECT_BRIDGE", // ↔ src/shared/messages.js MSG.INJECT_BRIDGE (동기화 필수)
+  PROBE: "PROBE", // ↔ src/shared/messages.js MSG.PROBE (동기화 필수)
 });
 const SCRAPE_TARGET = Object.freeze({ DAILY_ASSET: "dailyAsset", TRANSACTION: "transaction" });
 const SOURCE = Object.freeze({ MIRAEASSET: "miraeasset" });
@@ -837,19 +838,85 @@ async function handleScrape(payload) {
   }
 }
 
-// content script는 manifest로 자동 주입된다(document_idle). SCRAPE_REQUEST만 처리하고
-// SCRAPE_RESULT payload를 응답(return true + sendResponse)으로 돌려준다.
+/**
+ * 진단(PROBE): 콘솔(F12)이 막힌 사이트에서 현재 페이지가 실제로 무엇을 노출하는지 수집한다.
+ * 브리지가 실패해도 ISOLATED가 직접 볼 수 있는 것(URL·contentframe·DOM 표)은 보고한다(graceful).
+ * @returns {Promise<{ok:boolean, report:string}>}
+ */
+async function handleProbe() {
+  const lines = [];
+  const push = (s) => lines.push(s);
+
+  push("URL(top): " + location.href);
+
+  const iframe = document.querySelector('iframe[name="contentframe"]');
+  if (iframe) {
+    let cf;
+    try {
+      cf = iframe.contentWindow?.location?.href || "(빈 href)";
+    } catch (e) {
+      cf = "접근불가(cross-origin?): " + String(e?.message || e);
+    }
+    push("contentframe: 있음 → " + cf);
+  } else {
+    push("contentframe: 없음");
+  }
+
+  // 페이지 전역(openHp 등) — 브리지로 top/contentframe 양쪽 조회.
+  try {
+    await ensureBridge(6000);
+    const res = await bridgeSend({ cmd: "probe" }, 6000);
+    const frames = (res && res.result && res.result.frames) || [];
+    for (const f of frames) {
+      if (!f || !f.present) {
+        push(`[${f ? f.which : "?"}] (없음)`);
+        continue;
+      }
+      push(`[${f.which}] ${f.href || ""}`);
+      push("  주요전역: " + (f.hasList && f.hasList.length ? f.hasList.join(", ") : "(해당 없음)"));
+      if (f.others && f.others.length) {
+        push("  기타후보(앞 30개): " + f.others.slice(0, 30).join(", "));
+      }
+    }
+  } catch (e) {
+    push("페이지 전역 조회 실패(브리지): " + String(e?.message || e));
+  }
+
+  // DOM 표 구조 — 데이터가 사는 문서(contentframe 우선) 기준.
+  let doc = document;
+  try {
+    if (iframe && iframe.contentDocument) doc = iframe.contentDocument;
+  } catch (e) {
+    /* cross-origin 등 — top doc 사용 */
+  }
+  const tables = doc.querySelectorAll("table");
+  const ids = [...tables].map((t) => t.id || "(무명)").slice(0, 12);
+  push(`DOM(${doc === document ? "top" : "contentframe"}): table ${tables.length}개` + (ids.length ? " / id=" + ids.join(",") : ""));
+
+  return { ok: true, report: lines.join("\n") };
+}
+
+// content script는 manifest로 자동 주입된다(document_idle). SCRAPE_REQUEST(스크랩)와
+// PROBE(진단)를 처리하고 응답(return true + sendResponse)으로 돌려준다.
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.type !== MSG.SCRAPE_REQUEST) return false;
-  handleScrape(message.payload || {})
-    .then(sendResponse)
-    .catch((err) =>
-      sendResponse({
-        source: message.payload?.source || SOURCE.MIRAEASSET,
-        target: (message.payload?.targets && message.payload.targets[0]) || null,
-        ok: false,
-        error: String(err?.message || err),
-      })
-    );
-  return true; // 비동기 응답.
+  if (message?.type === MSG.SCRAPE_REQUEST) {
+    handleScrape(message.payload || {})
+      .then(sendResponse)
+      .catch((err) =>
+        sendResponse({
+          source: message.payload?.source || SOURCE.MIRAEASSET,
+          target: (message.payload?.targets && message.payload.targets[0]) || null,
+          ok: false,
+          error: String(err?.message || err),
+        })
+      );
+    return true; // 비동기 응답.
+  }
+  if (message?.type === MSG.PROBE) {
+    handleProbe()
+      .then(sendResponse)
+      .catch((err) => sendResponse({ ok: false, report: "진단 실패: " + String(err?.message || err) }));
+    return true; // 비동기 응답.
+  }
+  return false;
 });

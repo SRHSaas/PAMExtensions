@@ -83,3 +83,4 @@
 | 2026-06-17 | 버전 관리 시작 + CHANGELOG 작성 | 전체(.gitignore, CHANGELOG.md, 8개 커밋) | 의미 있는 구성요소 단위로 초기 이력 확립 |
 | 2026-06-17 | CSP-safe 페이지 월드 브리지 재설계 | content/miraeasset(+page-bridge.js), manifest, chrome-extension-mv3·brokerage-scraper 스킬 | 미래에셋 CSP가 인라인 script·eval 차단 → MAIN-world content script + 고정 명령 프로토콜(eval 제거). 스킬에 함정 반영 |
 | 2026-06-17 | 브리지 same-frame 토폴로지 + 주입 폴백 | content/miraeasset, background, messages(INJECT_BRIDGE) | cross-frame(iframe) 메시징이 월드 경계상 ping 무응답 → same-frame(top) 송수신 + 브리지의 top→contentframe 자동탐색 + declarative MAIN 미주입 시 executeScript 폴백 |
+| 2026-06-17 | 팝업 진단(PROBE) 버튼 추가 | popup, content/miraeasset, page-bridge, background, messages(PROBE) | 미래에셋 콘솔(F12) 차단으로 페이지 구조 확인 불가 → 확장 내 진단으로 프레임·전역·DOM 보고. 실제 페이지에 스크래퍼 맞추기용 |

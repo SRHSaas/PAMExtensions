@@ -36,6 +36,9 @@ const els = {
   brokerBadge: document.getElementById("brokerBadge"),
   guide: document.getElementById("guide"),
   scrapeBtn: document.getElementById("scrapeBtn"),
+  probeBtn: document.getElementById("probeBtn"),
+  probeBox: document.getElementById("probeBox"),
+  probeOut: document.getElementById("probeOut"),
   statusDot: document.getElementById("statusDot"),
   statusText: document.getElementById("statusText"),
   result: document.getElementById("result"),
@@ -70,12 +73,14 @@ async function detectContext() {
     els.guide.textContent =
       "미래에셋에 로그인된 탭입니다. SRHFinance에도 로그인돼 있어야 업로드됩니다. 준비되면 스크랩을 시작하세요.";
     els.scrapeBtn.disabled = false;
+    els.probeBtn.disabled = false;
   } else {
     els.brokerBadge.textContent = "대상 아님";
     els.brokerBadge.className = "badge off";
     els.guide.innerHTML =
       "지원 증권사 페이지가 아닙니다. <b>미래에셋(securities.miraeasset.com)</b>에 로그인한 탭에서 다시 열어주세요.";
     els.scrapeBtn.disabled = true;
+    els.probeBtn.disabled = true;
   }
 
   const obj = await chrome.storage.sync.get(ORIGIN_SETTING_KEY);
@@ -147,6 +152,28 @@ els.scrapeBtn.addEventListener("click", async () => {
     await chrome.runtime.sendMessage({ type: MSG.SCRAPE_REQUEST, payload });
   } catch (err) {
     renderStatus(STAGE.ERROR, String(err?.message || err));
+  }
+});
+
+// ── (2b) 진단: 페이지 구조를 읽어 팝업에 표시(콘솔 없이 복사용) ───────────────
+
+els.probeBtn.addEventListener("click", async () => {
+  els.probeBox.classList.remove("hidden");
+  els.probeOut.value = "진단 중…";
+  els.probeBtn.disabled = true;
+  try {
+    const res = await chrome.runtime.sendMessage({
+      type: MSG.PROBE,
+      payload: { tabId: detectedTabId ?? undefined },
+    });
+    els.probeOut.value =
+      (res && res.report) || "(보고서 없음) " + JSON.stringify(res || {});
+  } catch (err) {
+    els.probeOut.value = "진단 실패: " + String(err?.message || err);
+  } finally {
+    els.probeBtn.disabled = detectedSource == null;
+    els.probeOut.focus();
+    els.probeOut.select();
   }
 });
 

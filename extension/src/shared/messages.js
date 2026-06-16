@@ -43,6 +43,12 @@ export const MSG = {
    * chrome.scripting.executeScript({world:"MAIN"})로 주입하도록 요청. sendResponse {ok}.
    */
   INJECT_BRIDGE: "INJECT_BRIDGE",
+  /**
+   * popup → background → content. 진단: 현재 페이지의 프레임(top/contentframe) URL,
+   * 페이지 전역(openHp 등) 존재 여부, DOM 표 구조를 수집해 사람이 읽을 보고서로 반환.
+   * 콘솔(F12)이 막힌 사이트에서 페이지 구조를 확인하기 위한 용도. sendResponse { ok, report }.
+   */
+  PROBE: "PROBE",
 };
 
 /**

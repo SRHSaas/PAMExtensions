@@ -141,6 +141,27 @@ async function injectPageBridge(tabId) {
   }
 }
 
+// ── 진단(PROBE) — content에 위임, 미주입 탭은 주입 후 재시도 ──────────────────
+
+/**
+ * 대상 탭의 content script에 PROBE를 보내 페이지 구조 보고서를 받는다.
+ * content script가 아직 없으면(확장 로드 전 열린 탭) 직접 주입 후 1회 재시도.
+ * @param {number} tabId
+ * @returns {Promise<{ ok:boolean, report:string }>}
+ */
+async function probeTab(tabId) {
+  const msg = { type: MSG.PROBE };
+  try {
+    return await chrome.tabs.sendMessage(tabId, msg);
+  } catch (err) {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["src/content/miraeasset/index.js"],
+    });
+    return await chrome.tabs.sendMessage(tabId, msg);
+  }
+}
+
 // ── 설정된 SRHFinance origin 조회 ────────────────────────────────────────────
 
 /** @returns {Promise<string>} options에서 설정한 origin(없으면 dev 기본값). */
@@ -240,6 +261,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return false;
       }
       injectPageBridge(tabId).then(sendResponse);
+      return true; // 비동기 응답.
+    }
+    case MSG.PROBE: {
+      // popup → 진단 요청. payload.tabId(없으면 활성 탭)의 content에 위임해 보고서를 회신.
+      (async () => {
+        let tabId = message.payload?.tabId;
+        if (tabId == null) {
+          const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+          tabId = tab?.id;
+        }
+        if (tabId == null) return { ok: false, report: "대상 탭을 찾을 수 없습니다." };
+        return probeTab(tabId);
+      })()
+        .then(sendResponse)
+        .catch((e) => sendResponse({ ok: false, report: String(e?.message || e) }));
       return true; // 비동기 응답.
     }
     // STATUS / UPLOAD_RESULT 는 background가 popup으로 보내는 단방향 메시지라 수신 분기 불필요.

@@ -250,6 +250,46 @@
     return { ok: false, reason: "no-hkd1004-or-jquery" };
   }
 
+  /**
+   * 진단: top + contentframe 각각의 URL·주요 페이지 전역 존재 여부·관련 후보 전역을 수집.
+   * 콘솔 차단 사이트에서 "openHp 등이 실제로 어디에 있나"를 확인하기 위함. eval 없음.
+   */
+  function cmdProbe() {
+    var NAMES = [
+      "openHp", "subTabChange", "dateOfJango", "dateOfJangoDetail",
+      "accountLoaderLayer", "hkd1001", "hkd1002", "hkd1004", "jQuery", "$",
+    ];
+    var RE = /^(openhp|subtab|hkd|jango|account|asset|fnsearch|callajax|gopage|search)/i;
+    function frameInfo(which, win) {
+      if (!win) return { which: which, present: false };
+      var href = null;
+      try { href = win.location.href; } catch (e) { href = "(접근불가)"; }
+      var hasList = [];
+      for (var i = 0; i < NAMES.length; i++) {
+        var n = NAMES[i], t;
+        try { t = typeof win[n]; } catch (e2) { t = "?"; }
+        if (t !== "undefined") hasList.push(n + ":" + t);
+      }
+      var others = [];
+      try {
+        var keys = Object.keys(win);
+        for (var k = 0; k < keys.length; k++) {
+          if (RE.test(keys[k]) && NAMES.indexOf(keys[k]) === -1) others.push(keys[k]);
+        }
+      } catch (e3) { /* ignore */ }
+      return { which: which, present: true, href: href, hasList: hasList, others: others };
+    }
+    var cands = candidateWindows(); // top (+ content if 존재)
+    var frames = [];
+    var sawContent = false;
+    for (var i = 0; i < cands.length; i++) {
+      frames.push(frameInfo(cands[i][0], cands[i][1]));
+      if (cands[i][0] === "content") sawContent = true;
+    }
+    if (!sawContent) frames.push({ which: "content", present: false });
+    return { frames: frames };
+  }
+
   // ── 메시지 라우터 (same-frame) ───────────────────────────────────────────────
 
   window.addEventListener("message", async (ev) => {
@@ -281,6 +321,9 @@
           break;
         case "fxrates":
           payload = await cmdFxRates(msg);
+          break;
+        case "probe":
+          payload = { result: cmdProbe() };
           break;
         default:
           payload = { error: "unknown cmd: " + String(msg.cmd) };

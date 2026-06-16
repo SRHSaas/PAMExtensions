@@ -61,6 +61,22 @@
         cursor: pointer;
       }
       button:disabled { opacity: 0.5; cursor: not-allowed; }
+      button.secondary {
+        color: var(--accent);
+        background: #fff;
+        border: 1px solid var(--accent);
+      }
+      #probeOut {
+        width: 100%;
+        font: 11px/1.4 ui-monospace, "Cascadia Code", Consolas, monospace;
+        color: var(--fg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 8px;
+        resize: vertical;
+        white-space: pre;
+        overflow: auto;
+      }
       .status {
         display: flex;
         align-items: center;
@@ -109,6 +125,15 @@
     <!-- (2) 스크랩 시작 -->
     <div class="row">
       <button id="scrapeBtn" disabled>스크랩 시작</button>
+    </div>
+
+    <!-- (2b) 진단 (콘솔 없이 페이지 구조 확인) -->
+    <div class="row">
+      <button id="probeBtn" class="secondary" disabled>진단 (페이지 구조 확인)</button>
+    </div>
+    <div id="probeBox" class="row hidden">
+      <textarea id="probeOut" readonly rows="9"
+        title="전체 선택 후 복사해서 공유하세요"></textarea>
     </div>
 
     <!-- (3) 진행 STATUS -->
