@@ -7,6 +7,15 @@
 
 ## [Unreleased]
 
+### Fixed
+- **content script 중복 주입 `Identifier 'MSG' has already been declared`**: 선언형 content_scripts
+  주입과 background의 inject 폴백(executeScript)이 같은 문서에 두 번 실행돼 최상위 `const MSG`
+  재선언으로 스크립트가 깨지고 리스너가 망가지던 문제(→ "message channel closed") → content script
+  전체를 **멱등 가드(IIFE)**로 감싸 두 번째 주입은 즉시 return.
+- **단독 자산 페이지에서 "message channel closed"**: 자산 페이지(/hkd/…)가 contentframe이 아니라
+  top 프레임 자체일 때 `openHp`가 top을 reload해 content script가 종료되던 문제 → contentframe이
+  없으면 "프레임셋 홈(securities.miraeasset.com)으로 이동해 수집하라"는 명확한 에러로 중단.
+
 ## [0.2.0] - 2026-06-17
 
 수집 옵션 시스템 + 업로드 전 미리보기(2단계 파이프라인).

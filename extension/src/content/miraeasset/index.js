@@ -37,6 +37,17 @@
 // 로드 즉시 "Cannot use import statement outside a module"로 스크립트 전체가 죽고 onMessage
 // 리스너가 등록되지 않아 "Receiving end does not exist"가 난다. → 이 어댑터가 쓰는 소수 상수만
 // 인라인으로 둔다. 값은 src/shared/messages.js(단일 정의)와 **반드시 일치**시킨다(동기화 필수).
+
+// ── 멱등 가드(중복 주입 방어) ───────────────────────────────────────────────────
+// content script가 한 문서에 두 번 주입되면(선언형 content_scripts + background의 inject 폴백
+// executeScript) 최상위 `const MSG` 재선언으로 "Identifier 'MSG' has already been declared"가 나
+// 스크립트가 통째로 깨지고 리스너가 망가진다(→ "message channel closed"). 전체를 IIFE+가드로 감싸
+// 두 번째 주입은 즉시 return 한다. (페이지가 이동하면 새 문서의 isolated world라 플래그가 리셋돼
+// 정상적으로 재주입된다.)
+(function () {
+  if (window.__pamMiraeContentLoaded__) return;
+  window.__pamMiraeContentLoaded__ = true;
+
 const MSG = Object.freeze({
   SCRAPE_REQUEST: "SCRAPE_REQUEST",
   SCRAPE_RESULT: "SCRAPE_RESULT",
@@ -310,6 +321,17 @@ async function bridgeFxRates(items, timeoutMs = 60000) {
  * @param {string} area      진단 메시지용 영역명
  */
 async function navigateTo(pagePath, readySel, area) {
+  // 단독(standalone) 자산 페이지 방어: 정상 미래에셋은 프레임셋(top=securities.miraeasset.com +
+  // contentframe)이라 openHp가 contentframe을 이동시키고 top의 content script는 살아남는다.
+  // 그런데 자산 페이지(/hkd/...)가 top 프레임 자체이면(contentframe 없음) openHp가 top을 reload해
+  // 이 content script를 종료시킨다 → "message channel closed". 명확히 안내하고 중단한다.
+  if (!getContentFrameWin()) {
+    throw new Error(
+      "[miraeasset] 단독 자산 페이지에서는 수집할 수 없습니다 — 페이지 이동이 확장을 종료시킵니다. " +
+        "주소창을 'https://securities.miraeasset.com/'(프레임셋 홈)으로 이동해 로그인 상태에서 다시 '수집'하세요. " +
+        "확장이 자산 페이지로 알아서 이동합니다."
+    );
+  }
   // openHp 는 페이지 전역 함수 → top 프레임 브리지가 top→contentframe 자동 탐색해 호출.
   // 브리지는 top 프레임에 한 번 설치되면 iframe 네비게이션과 무관하게 유지되므로
   // 여기서 한 번만 준비 확인하면 된다(same-frame).
@@ -970,3 +992,5 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   return false;
 });
+
+})(); // ── 멱등 가드 IIFE 끝 ──

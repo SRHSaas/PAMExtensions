@@ -86,3 +86,4 @@
 | 2026-06-17 | 팝업 진단(PROBE) 버튼 추가 | popup, content/miraeasset, page-bridge, background, messages(PROBE) | 미래에셋 콘솔(F12) 차단으로 페이지 구조 확인 불가 → 확장 내 진단으로 프레임·전역·DOM 보고. 실제 페이지에 스크래퍼 맞추기용 |
 | 2026-06-17 | 브리지 버전 핫스왑 + contentframe 이름기반 접근 | page-bridge, content/miraeasset, references/miraeasset | (1) 옛 브리지 고착 → VER 핫스왑. (2) 미래에셋이 `<frameset>`/`<frame>` 구조라 `iframe[name]` 질의가 contentframe 못 찾아 openHp 도달 실패 → `window.frames["contentframe"]` 이름 접근으로 수정 |
 | 2026-06-17 | 업로드 500 dedup + 옵션 시스템(v0.2.0) | normalize, popup, background, messages, SRHFinance(last-dates) | accounts 중복 upsert 500 수정. 스크랩 대상 선택·기간 자동(증분)/지정·2단계 수집→미리보기(JSON 다운로드)→업로드. COLLECT/UPLOAD는 fire-and-ack(장시간 작업 채널 끊김 방지). 자동 모드는 SRHFinance `/api/ingest/last-dates`(신규) 사용 |
+| 2026-06-17 | content script 멱등 가드 + 단독 페이지 감지 | content/miraeasset | 선언형+폴백 이중 주입으로 `const MSG` 재선언("MSG already declared")→ IIFE 멱등 가드. 자산 페이지가 top 프레임 자체(contentframe 없음)면 openHp가 top reload로 content script 종료 → 프레임셋 홈 안내 에러 |
