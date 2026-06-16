@@ -96,6 +96,15 @@ export const MSG = {
 
 대응: content script는 (1) 쓰는 메시지 상수를 **인라인 미러**로 두고(값은 `messages.js`와 동기화) 정적 import를 쓰지 않으며, (2) 내부 함수에 `export`를 붙이지 않는다(같은 파일에서 호출되므로 불필요). 작성 후 `node --check`로 파싱을 확인하라. (대규모면 esbuild 번들이 대안이나 로드 단순성을 위해 인라인 우선.)
 
+### 페이지 월드 접근은 MAIN-world content script로 (CSP-strict 사이트)
+
+ISOLATED content script는 페이지가 정의한 JS 전역(함수/객체: `openHp`, jQuery 플러그인, ajax 응답 객체 등)에 접근하지 못한다(격리 월드). 흔한 우회는 페이지에 `<script>`를 주입하는 것이지만, **CSP가 엄격한 사이트**(`script-src 'self'`, `unsafe-inline`·`unsafe-eval` 없음)는 ① 인라인 `<script>` 주입과 ② `eval`/`new Function`을 **둘 다** 막는다(증권사 사이트 대부분 해당). 증상: "Executing inline script violates ... CSP" 또는 "unsafe-eval".
+
+해법:
+- 페이지 월드 접근이 필요한 코드를 **별도 파일로 분리**해 `content_scripts`에 `"world":"MAIN"`으로 선언한다. 확장이 주입하는 MAIN-world 스크립트는 **페이지 CSP의 script-src 제약을 받지 않고** 실행된다(Chrome/Edge 111+). 동일출처 iframe의 전역도 다루려면 `"all_frames": true`, 가능한 한 빨리 설치하려면 `"run_at": "document_start"`.
+- MAIN-world 스크립트는 **chrome.* API가 없다.** 메시징은 ISOLATED 스크립트가 담당하고, 둘은 `window.postMessage`로 통신한다(동일출처 cross-frame이면 출처 게이팅을 `ev.origin === location.origin`으로 — `ev.source===window` 엄격비교는 top↔iframe 구조에서 드롭됨).
+- **eval은 MAIN 월드에서도 페이지 realm의 CSP에 걸린다.** 브리지는 코드 문자열을 주고받지 말고 `call`(이름으로 페이지 함수 호출)·`get`(전역을 점경로로 읽어 구조화복제 정제) 같은 **고정 명령 프로토콜**로 설계한다. 순수 DOM 조작/파싱은 브리지로 보내지 말고 동일출처 `iframe.contentDocument`로 ISOLATED 월드가 직접 한다.
+
 ### 선언형 content script 미주입 + 자동 주입 폴백
 
 선언형 `content_scripts`는 **확장 로드/리로드 이후 페이지가 로드될 때만** 주입된다. 확장을 켜기 전부터 열려 있던 탭에는 주입되지 않아 같은 "Receiving end does not exist"가 난다. background의 메시지 전송을 try/catch로 감싸 실패 시 `chrome.scripting.executeScript({target:{tabId}, files:[...]})`로 직접 주입 후 1회 재시도하면, 사용자가 탭을 수동 새로고침하지 않아도 동작한다(`scripting` 권한 + 대상 host_permission 필요).
