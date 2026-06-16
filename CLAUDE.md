@@ -79,4 +79,5 @@
 | 2026-06-16 | 초기 하네스 구성(에이전트 5 + 스킬 6) | 전체 | 쿠키 자동유지 폐지 → 사용자 로그인 후 자동화 확장 빌드 체계 구축 |
 | 2026-06-16 | 초기 빌드 실행(미래에셋 v0.1) | manifest.json, src/* | 하네스 첫 구동 — 스크랩→정규화→세션 업로드 파이프라인 배선 완료, QA 전 항목 PASS |
 | 2026-06-16 | 확장 파일을 `extension/` 하위로 이전 | extension/*, _workspace/qa/* | Chrome이 확장 루트의 `_workspace`(예약 `_` 접두) 거부 → 로드 디렉토리를 프로젝트 루트와 분리 |
-| 2026-06-17 | content script 정적 import 제거(인라인 상수) + background 자동주입 폴백 | content/miraeasset, background, chrome-extension-mv3·brokerage-scraper 스킬 | 실행 시 "Receiving end does not exist" — content_scripts는 ESM 모듈 불가(import 시 리스너 미등록). 스킬에 함정 반영 |
+| 2026-06-17 | content script ESM 구문(import/export) 제거(인라인 상수) + background 자동주입 폴백 | content/miraeasset, background, chrome-extension-mv3·brokerage-scraper 스킬 | 실행 시 "Receiving end does not exist" — content_scripts는 클래식 스크립트라 import/export 시 파싱 실패로 리스너 미등록. 스킬에 함정 반영 |
+| 2026-06-17 | 버전 관리 시작 + CHANGELOG 작성 | 전체(.gitignore, CHANGELOG.md, 8개 커밋) | 의미 있는 구성요소 단위로 초기 이력 확립 |
