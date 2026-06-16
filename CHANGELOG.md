@@ -7,6 +7,28 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-17
+
+수집 옵션 시스템 + 업로드 전 미리보기(2단계 파이프라인).
+
+### Added
+- **스크랩 대상 선택**(팝업): 일자별 자산 / 거래내역 체크박스.
+- **기간 모드**: 자동(증분) / 지정(시작·종료일). 자동은 SRHFinance의 마지막 수집일 다음날~오늘을
+  수집한다(증분).
+- **2단계 파이프라인**: 수집(스크랩+정규화, `chrome.storage.local`에 저장) → **미리보기**(영역별
+  건수 + canonical **JSON 다운로드**) → 업로드. 업로드 전에 데이터를 확인/저장할 수 있다.
+- **SRHFinance 조회 API**(별도 레포): `GET /api/ingest/last-dates`(requireApprovedUser, 읽기 전용)가
+  로그인 사용자의 `daily_last`/`tx_last`를 반환. 자동 증분 모드가 이를 사용. *pam.srhsol.com 반영은
+  SRHFinance 배포 필요.*
+
+### Fixed
+- **업로드 500 (`ON CONFLICT ... cannot affect row a second time`)**: 일자별 raw가 날짜마다 같은
+  계좌를 반복해 `accounts`의 `account_no`가 대량 중복 → 서버 upsert 실패. `mergePayloads`에서
+  accounts(account_no 유일)·daily_assets((date,account_no) 유일) dedup.
+- **"message channel closed before a response was received"**: 장시간 수집을 팝업이 `sendMessage`
+  응답으로 기다리다 팝업이 닫히면 채널이 끊겨 발생 → COLLECT/UPLOAD를 **fire-and-ack**로 전환
+  (즉시 ack, 결과는 `COLLECT_RESULT`/`UPLOAD_RESULT` 브로드캐스트 + `chrome.storage` 복원).
+
 ## [0.1.0] - 2026-06-17
 
 증권사 데이터를 스크래핑 → 정규화 → 사용자가 로그인한 SRHFinance 세션으로 업로드하는

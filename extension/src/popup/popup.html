@@ -16,7 +16,7 @@
       }
       * { box-sizing: border-box; }
       body {
-        width: 320px;
+        width: 360px;
         margin: 0;
         padding: 14px;
         font: 13px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -112,6 +112,25 @@
       }
       a { color: var(--accent); text-decoration: none; cursor: pointer; }
       .hidden { display: none; }
+      fieldset {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 8px 10px;
+        margin: 8px 0;
+      }
+      legend { font-size: 11px; font-weight: 600; color: var(--muted); padding: 0 4px; }
+      .opt { display: flex; align-items: center; gap: 6px; margin: 3px 0; font-size: 12px; }
+      .opt input { width: auto; }
+      .opt label { cursor: pointer; }
+      .dates { display: flex; gap: 8px; margin-top: 6px; }
+      .dates label { font-size: 11px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; flex: 1; }
+      .dates input[type="date"] {
+        width: 100%; padding: 5px 6px; font-size: 12px;
+        border: 1px solid var(--border); border-radius: 6px;
+      }
+      .autoNote { font-size: 11px; color: var(--muted); margin-top: 6px; }
+      .btnRow { display: flex; gap: 8px; }
+      .btnRow button { flex: 1; }
     </style>
   </head>
   <body>
@@ -122,9 +141,52 @@
       <div id="guide" class="hint">현재 탭을 확인하는 중…</div>
     </div>
 
-    <!-- (2) 스크랩 시작 -->
+    <!-- (2a) 스크랩 대상 -->
+    <fieldset>
+      <legend>스크랩 대상</legend>
+      <div class="opt">
+        <input type="checkbox" id="targetDaily" checked />
+        <label for="targetDaily">일자별 자산</label>
+      </div>
+      <div class="opt">
+        <input type="checkbox" id="targetTx" checked />
+        <label for="targetTx">거래내역</label>
+      </div>
+    </fieldset>
+
+    <!-- (2b) 기간 모드 -->
+    <fieldset>
+      <legend>기간</legend>
+      <div class="opt">
+        <input type="radio" id="modeAuto" name="rangeMode" value="auto" checked />
+        <label for="modeAuto">자동 (증분)</label>
+      </div>
+      <div class="opt">
+        <input type="radio" id="modeManual" name="rangeMode" value="manual" />
+        <label for="modeManual">지정</label>
+      </div>
+      <div id="autoNote" class="autoNote">마지막 수집일 이후를 자동으로 수집합니다.</div>
+      <div id="dateInputs" class="dates hidden">
+        <label>시작일<input type="date" id="startDate" /></label>
+        <label>종료일<input type="date" id="endDate" /></label>
+      </div>
+    </fieldset>
+
+    <!-- (2c) 수집 시작 -->
     <div class="row">
-      <button id="scrapeBtn" disabled>스크랩 시작</button>
+      <button id="collectBtn" disabled>수집</button>
+    </div>
+
+    <!-- (2d) 미리보기 (수집 후 표시) -->
+    <div id="preview" class="row hidden">
+      <fieldset>
+        <legend>미리보기 (업로드 전)</legend>
+        <div id="previewCounts" class="counts"></div>
+        <div class="btnRow" style="margin-top: 8px;">
+          <button id="downloadBtn" class="secondary">JSON 다운로드</button>
+          <button id="uploadBtn">업로드</button>
+        </div>
+      </fieldset>
     </div>
 
     <!-- (2b) 진단 (콘솔 없이 페이지 구조 확인) -->

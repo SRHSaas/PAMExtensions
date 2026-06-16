@@ -38,6 +38,41 @@ export const MSG = {
   /** background → popup. 파이프라인 진행 단계 알림. */
   STATUS: "STATUS",
   /**
+   * popup → background. **2단계 파이프라인 1단계**: 스크랩+정규화만 수행하고
+   * 결과 페이로드를 chrome.storage.local[STORAGE_KEY.PENDING_PAYLOAD]에 저장한다.
+   * (업로드는 하지 않는다 — 업로드 전 미리보기를 위해 분리.)
+   *
+   * **장시간 작업 — fire-and-ack**: COLLECT는 여러 날짜를 스크랩하는 장시간 작업이다.
+   * popup이 sendMessage 응답으로 결과를 기다리면, 팝업이 포커스를 잃어 닫히는 순간
+   * 채널이 끊겨 "message channel closed" 오류가 난다. 따라서 background는 즉시
+   * { ok:true, started:true } ack만 하고(return false), 작업 진행은 STATUS로,
+   * 최종 결과는 COLLECT_RESULT 브로드캐스트 + storage 저장으로 알린다.
+   * payload = CollectRequestPayload.
+   */
+  COLLECT: "COLLECT",
+  /**
+   * background → popup. 수집(COLLECT) **최종 결과** 브로드캐스트.
+   * background가 작업 완료 시 pendingPayload를 storage에 저장한 뒤 이 메시지를 broadcast.
+   * popup은 onMessage로 받아 미리보기를 띄운다. payload = CollectResultPayload.
+   */
+  COLLECT_RESULT: "COLLECT_RESULT",
+  /**
+   * popup → background. **2단계 파이프라인 2단계**: 저장된 pendingPayload를
+   * 사용자 세션 쿠키로 업로드한다. payload = {}(빈 객체).
+   *
+   * **장시간 작업 — fire-and-ack**: 업로드도 길 수 있으므로 COLLECT와 동일하게
+   * 즉시 ack(return false)하고, 결과는 UPLOAD_RESULT 브로드캐스트 + storage로 알린다.
+   * 성공 시 pendingPayload에 uploadedAt 기록.
+   */
+  UPLOAD: "UPLOAD",
+  /**
+   * popup → background. 자동(증분) 기간 표시용. background가 SRHFinance
+   * GET {origin}/api/ingest/last-dates 를 세션 쿠키로 호출해 마지막 수집일을 반환.
+   * sendResponse {ok, daily_last?, tx_last?, error?}. (선택 — 자동 기간 안내 표시용.)
+   * (이 메시지는 짧은 단발 조회라 sendResponse 응답 방식이 안전하다.)
+   */
+  LAST_DATES: "LAST_DATES",
+  /**
    * content(ISOLATED) → background. MAIN-world 페이지 브리지(page-bridge.js)가 선언형
    * content_scripts로 주입되지 않았을 때(확장 전부터 열린 탭 등) background가
    * chrome.scripting.executeScript({world:"MAIN"})로 주입하도록 요청. sendResponse {ok}.
@@ -61,6 +96,8 @@ export const STAGE = {
   IDLE: "idle",
   SCRAPING: "scraping",
   NORMALIZING: "normalizing",
+  /** 수집(스크랩+정규화) 완료 — 페이로드가 저장됐고 미리보기/업로드 대기 중. */
+  COLLECTED: "collected",
   UPLOADING: "uploading",
   DONE: "done",
   ERROR: "error",
@@ -162,8 +199,43 @@ export const SOURCE = {
  * @property {string} [updatedAt]              ISO 타임스탬프.
  */
 
+/**
+ * COLLECT payload — popup → background. 수집(스크랩+정규화)만 요청.
+ * @typedef {Object} CollectRequestPayload
+ * @property {string} source            증권사 식별자. SOURCE.*.
+ * @property {string[]} targets         스크랩할 종류 배열. SCRAPE_TARGET.* 값(1개 이상).
+ * @property {number} [tabId]           대상 탭 id. 미지정 시 background가 활성 탭으로 채움.
+ * @property {"auto"|"manual"} rangeMode 자동(증분, last-dates 기반) / 지정(수동 range).
+ * @property {Object} [range]           rangeMode="manual"일 때 모든 target에 적용할 기간.
+ * @property {string} [range.startDate] "YYYY-MM-DD".
+ * @property {string} [range.endDate]   "YYYY-MM-DD".
+ */
+
+/**
+ * COLLECT 응답 — background → popup(sendResponse).
+ * @typedef {Object} CollectResultPayload
+ * @property {boolean} ok                수집(스크랩+정규화+저장) 성공 여부.
+ * @property {Object} [counts]           영역별 건수 { accounts, daily_assets,
+ *                                       daily_holdings, transactions, dividends }.
+ * @property {Object} [usedRanges]       target별 실제 사용 기간 { [target]: {startDate,endDate} }.
+ * @property {string} [error]            실패 시 사람이 읽을 오류 메시지.
+ */
+
+/**
+ * chrome.storage.local 에 저장되는 수집 결과(업로드 전 미리보기·업로드 입력).
+ * @typedef {Object} PendingPayload
+ * @property {import("./ingest-types.js").IngestPayload} payload  정규 페이로드(업로드 입력).
+ * @property {Object} counts             영역별 건수(미리보기 표시용).
+ * @property {string} source             증권사 식별자.
+ * @property {Object} usedRanges         target별 실제 사용 기간.
+ * @property {string} collectedAt        ISO 타임스탬프(수집 시각).
+ * @property {string} [uploadedAt]       ISO 타임스탬프(업로드 성공 시각. 없으면 미업로드).
+ */
+
 /** chrome.storage.local 진행상태 키. */
 export const STORAGE_KEY = {
   /** PipelineState 저장 키. */
   PIPELINE_STATE: "pam:pipelineState",
+  /** PendingPayload 저장 키(수집 결과 — 업로드 전 미리보기/업로드 입력). */
+  PENDING_PAYLOAD: "pam:pendingPayload",
 };

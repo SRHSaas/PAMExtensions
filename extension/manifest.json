@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "PAMExtensions",
   "description": "증권사 포트폴리오를 스크랩 → 정규화 → 로그인된 SRHFinance 세션으로 업로드하는 MV3 확장.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "permissions": ["storage", "activeTab", "scripting"],
   "host_permissions": [
     "https://securities.miraeasset.com/*",
