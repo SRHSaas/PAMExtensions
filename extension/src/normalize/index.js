@@ -201,8 +201,15 @@ export function buildTransactionPayload(raw, source = SOURCE.MIRAEASSET) {
 }
 
 /**
- * 여러 IngestPayload를 하나로 병합한다. 영역 배열을 단순 concat한다 —
- * daily_holdings를 (date,name)으로 미리 합산하지 않는다(서버 몫). 계좌 중복은 서버 upsert가 흡수.
+ * 여러 IngestPayload를 하나로 병합하고, **upsert 안전하게 중복을 제거**한다.
+ *
+ * 서버 upsert는 한 배치에 동일 onConflict 키가 두 번 오면 실패한다
+ * ("ON CONFLICT DO UPDATE command cannot affect row a second time"). 영역별로 다르게 처리:
+ *   - accounts: 서버가 dedup 안 함. 일자별 raw가 날짜마다 같은 계좌를 반복 → account_no 대량 중복.
+ *     → account_no 유일화(필드는 비-null 우선 병합). **필수 dedup**.
+ *   - daily_assets: 서버 onConflict (date,account_no), seq 없음 → (date,account_no) 유일화. **필수 dedup**.
+ *   - daily_holdings: 서버가 (date,name)으로 합산하므로 중복 허용(미리 합산 금지 — 서버 몫).
+ *   - transactions/dividends: 서버가 중복 키에 seq를 1부터 부여 → 중복이 서로 다른 행이 되어 안전.
  *
  * 빈/누락 배열은 무시되고, 비어 있지 않은 첫 payload의 source/schema_version을 채택한다.
  *
@@ -231,6 +238,32 @@ export function mergePayloads(payloads) {
       if (Array.isArray(p[key]) && p[key].length) merged[key].push(...p[key]);
     }
   }
+
+  // accounts: account_no 유일화(비-null 우선 병합). 서버가 dedup 안 하므로 필수.
+  const accMap = new Map();
+  for (const a of merged.accounts) {
+    if (!a || !a.account_no) continue;
+    const ex = accMap.get(a.account_no);
+    accMap.set(
+      a.account_no,
+      ex
+        ? {
+            account_no: a.account_no,
+            account_type: ex.account_type ?? a.account_type ?? null,
+            alias: ex.alias ?? a.alias ?? null,
+          }
+        : a
+    );
+  }
+  merged.accounts = [...accMap.values()];
+
+  // daily_assets: (date,account_no) 유일화(마지막 값 채택). 서버 onConflict 키와 동일.
+  const daMap = new Map();
+  for (const r of merged.daily_assets) {
+    if (!r || !r.date || !r.account_no) continue;
+    daMap.set(r.date + "|" + r.account_no, r);
+  }
+  merged.daily_assets = [...daMap.values()];
 
   return merged;
 }
