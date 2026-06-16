@@ -88,9 +88,13 @@ export const MSG = {
 
 ### ⚠ content script는 ESM 모듈이 아니다 (중대 함정)
 
-`background`(service_worker `type:module`)와 `popup`(`<script type="module">`)은 `messages.js`를 정적 `import` 할 수 있지만, **manifest `content_scripts`로 선언된 스크립트는 클래식 스크립트로 실행되어 정적 `import`가 불가능**하다. 최상단에 `import {...} from "..."`를 쓰면 로드 즉시 `Cannot use import statement outside a module`로 스크립트 전체가 죽고, `chrome.runtime.onMessage` 리스너가 등록되지 않아 background의 `chrome.tabs.sendMessage`가 **"Could not establish connection. Receiving end does not exist."**로 실패한다(증상은 "수신자 없음"이라 원인이 import인지 드러나지 않는다).
+`background`(service_worker `type:module`)와 `popup`(`<script type="module">`)은 `messages.js`를 정적 `import`/`export` 할 수 있지만, **manifest `content_scripts`로 선언된 스크립트는 클래식 스크립트로 실행되어 정적 `import`·`export`가 모두 불가능**하다. 두 증상을 구분하라:
+- 최상단 `import {...} from "..."` → 로드 즉시 `Cannot use import statement outside a module`.
+- 내부 함수에 붙인 `export`(예: `export async function scrape...`) → `Uncaught SyntaxError: Unexpected token 'export'`.
 
-대응: content script는 자신이 쓰는 소수 메시지 상수를 **인라인 미러**로 두고(값은 `messages.js`와 동기화), 정적 import를 쓰지 않는다. (대규모면 esbuild 번들이 대안이나 로드 단순성을 위해 인라인 우선.)
+둘 중 무엇이든 스크립트 전체가 파싱 실패해 `chrome.runtime.onMessage` 리스너가 등록되지 않고, background의 `chrome.tabs.sendMessage`가 **"Could not establish connection. Receiving end does not exist."**로 실패한다(증상은 "수신자 없음"이라 원인이 ESM 구문인지 드러나지 않는다 — 페이지 콘솔의 SyntaxError를 직접 확인할 것).
+
+대응: content script는 (1) 쓰는 메시지 상수를 **인라인 미러**로 두고(값은 `messages.js`와 동기화) 정적 import를 쓰지 않으며, (2) 내부 함수에 `export`를 붙이지 않는다(같은 파일에서 호출되므로 불필요). 작성 후 `node --check`로 파싱을 확인하라. (대규모면 esbuild 번들이 대안이나 로드 단순성을 위해 인라인 우선.)
 
 ### 선언형 content script 미주입 + 자동 주입 폴백
 

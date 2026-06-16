@@ -463,7 +463,7 @@ function parseDailyAssetPage(doc) {
  * @param {{startDate?:string, endDate?:string}} [range]
  * @returns {Promise<object[]>}  §3 dailyAsset raw 배열: [{ kind, date, accounts[], holdings[] }, ...]
  */
-export async function scrapeDailyAsset(range = {}) {
+async function scrapeDailyAsset(range = {}) {
   await openDailyTab();
 
   const start = toScreenDate(range.startDate);
@@ -744,7 +744,7 @@ async function enrichFxRates(transactions) {
  * @param {{startDate?:string, endDate?:string}} [range]
  * @returns {Promise<object[]>}  §3 transaction raw 배열: [{ kind, acno, account, transactions[] }, ...]
  */
-export async function scrapeTransaction(range = {}) {
+async function scrapeTransaction(range = {}) {
   await openTransactionPage();
   const accounts = await getTransactionAccounts();
 
