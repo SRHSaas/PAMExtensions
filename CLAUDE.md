@@ -84,3 +84,4 @@
 | 2026-06-17 | CSP-safe 페이지 월드 브리지 재설계 | content/miraeasset(+page-bridge.js), manifest, chrome-extension-mv3·brokerage-scraper 스킬 | 미래에셋 CSP가 인라인 script·eval 차단 → MAIN-world content script + 고정 명령 프로토콜(eval 제거). 스킬에 함정 반영 |
 | 2026-06-17 | 브리지 same-frame 토폴로지 + 주입 폴백 | content/miraeasset, background, messages(INJECT_BRIDGE) | cross-frame(iframe) 메시징이 월드 경계상 ping 무응답 → same-frame(top) 송수신 + 브리지의 top→contentframe 자동탐색 + declarative MAIN 미주입 시 executeScript 폴백 |
 | 2026-06-17 | 팝업 진단(PROBE) 버튼 추가 | popup, content/miraeasset, page-bridge, background, messages(PROBE) | 미래에셋 콘솔(F12) 차단으로 페이지 구조 확인 불가 → 확장 내 진단으로 프레임·전역·DOM 보고. 실제 페이지에 스크래퍼 맞추기용 |
+| 2026-06-17 | 브리지 버전 핫스왑 + contentframe 이름기반 접근 | page-bridge, content/miraeasset, references/miraeasset | (1) 옛 브리지 고착 → VER 핫스왑. (2) 미래에셋이 `<frameset>`/`<frame>` 구조라 `iframe[name]` 질의가 contentframe 못 찾아 openHp 도달 실패 → `window.frames["contentframe"]` 이름 접근으로 수정 |

@@ -53,20 +53,36 @@
   //  - ping 응답에 ver 을 실어, ISOLATED 가 스테일 브리지를 감지해 재주입(핫스왑)하도록 한다.
   // (주의: 이 버전 체계 도입 이전 구버전 브리지엔 이 체크가 없으므로, 구→신 전환은 페이지
   //  새로고침이 한 번 필요하다. 이후 버전 간 전환은 핫스왑으로 자동 갱신된다.)
-  var VER = 3; // ⚠ page-bridge.js 변경 시마다 +1. index.js 의 EXPECTED_BRIDGE_VER 와 동기화.
+  var VER = 4; // ⚠ page-bridge.js 변경 시마다 +1. index.js 의 EXPECTED_BRIDGE_VER 와 동기화.
   if (window.__pamMiraeBridgeMainVer__ === VER) return; // 같은 버전 중복 방지
   window.__pamMiraeBridgeMainVer__ = VER; // 최신 버전 표식
 
   // ── 대상 window 탐색 (top + contentframe) ────────────────────────────────────
 
-  /** 동일출처 contentframe 의 window. 없거나 접근 불가면 null. */
+  /**
+   * 동일출처 contentframe 의 window(이름 기반). 미래에셋은 <frameset>/<frame> 구조라
+   * `iframe[name=...]` 요소 질의로는 못 찾는다(실측). window.frames 이름 접근은 frame/iframe
+   * 모두 동작(Playwright page.frame() 과 동일). 없거나 접근 불가면 null.
+   */
   function getContentWin() {
+    // 1) 이름 기반 프레임 접근.
     try {
-      const iframe = document.querySelector('iframe[name="contentframe"]');
-      if (iframe && iframe.contentWindow) return iframe.contentWindow;
-    } catch (e) {
-      /* cross-origin 등 — null 로 처리 */
-    }
+      var w = window.frames["contentframe"];
+      if (w) return w;
+    } catch (e) { /* ignore */ }
+    // 2) window.frames 순회(window.name 기준).
+    try {
+      for (var i = 0; i < window.frames.length; i++) {
+        try {
+          if (window.frames[i].name === "contentframe") return window.frames[i];
+        } catch (e2) { /* cross-origin 프레임 스킵 */ }
+      }
+    } catch (e3) { /* ignore */ }
+    // 3) 폴백: 요소 질의(iframe 또는 frame).
+    try {
+      var el = document.querySelector('iframe[name="contentframe"], frame[name="contentframe"]');
+      if (el && el.contentWindow) return el.contentWindow;
+    } catch (e4) { /* ignore */ }
     return null;
   }
 

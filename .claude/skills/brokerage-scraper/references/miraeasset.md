@@ -37,6 +37,23 @@
 - accounts: `accountNo, accountType, alias, totalAsset, evalAmount, profitLoss, profitRate`
 - holdings: `name, category, quantity, buyAmount, evalAmount, profitLoss, profitRate`
 
+## 프레임 구조 (실측 — 중요)
+
+미래에셋은 **`<frameset>`/`<frame>` 구조의 SPA**다. URL은 항상 `https://securities.miraeasset.com/`로 고정되고, 내부 JS 함수(`openHp(path, secure)`)가 **contentframe**을 다른 페이지로 이동시킨다(주소창 안 바뀜). 진단(PROBE)으로 확인한 프레임 트리:
+
+```
+top  (securities.miraeasset.com/)
+├─ topframe          (blank.html)
+├─ contentframe      ← 데이터·페이지 전역이 여기 산다
+│    예: /hkd/hkd1002/r01.do, tables=3, openHp/subTabChange/jQuery/accountLoader
+├─ sessionCheckFrame (session_update.jsp)
+└─ refreshframe      (wtsform.jsp)
+```
+
+- **`openHp`·`hkd1004`·`accountLoader`·jQuery 등 페이지 전역은 top이 아니라 `contentframe` 안에 산다.** contentframe이 자산 페이지(hkd1002/hkd1004 등)로 이동한 뒤에야 그 페이지 고유 전역(`hkd1004`, `accountLoaderLayer`/`accountLoader`)과 데이터 표가 생긴다.
+- **`<frame>`이므로 `document.querySelector('iframe[name="contentframe"]')`로는 못 찾는다.** 반드시 **이름 기반**(`window.frames["contentframe"]`, 또는 `window.frames` 순회 후 `.name === "contentframe"`)으로 접근한다 — Playwright `page.frame("contentframe")`과 동일 원리. `<frame>`/`<iframe>` 모두 동작. (이 함정으로 "openHp 없음" 오류가 났었다.)
+- 스크래퍼는 openHp로 contentframe을 자산 페이지로 이동시키므로, 사용자는 자산 화면에 미리 들어가 있지 않아도 된다(로그인만 돼 있으면 됨).
+
 ## 주의
 
 - 계좌번호는 화면상 하이픈 포함. raw에는 그대로 두고 normalizer가 하이픈 제거.

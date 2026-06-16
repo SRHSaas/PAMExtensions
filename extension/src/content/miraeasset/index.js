@@ -48,7 +48,7 @@ const SOURCE = Object.freeze({ MIRAEASSET: "miraeasset" });
 
 // page-bridge.js 의 VER 과 동기화. ping 응답 ver 이 이 값과 다르면 스테일/구버전 브리지로 보고
 // 핫스왑(INJECT_BRIDGE 재주입)한다. 확장 리로드 후 페이지 새로고침 없이 브리지가 갱신되도록.
-const EXPECTED_BRIDGE_VER = 3; // ⚠ page-bridge.js VER 과 함께 증가.
+const EXPECTED_BRIDGE_VER = 4; // ⚠ page-bridge.js VER 과 함께 증가.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 페이지 경로 (원본 config.json) — openHp(path, secure)로 contentframe을 이동시킨다.
@@ -102,12 +102,48 @@ function requireEl(root, selector, area) {
 // contentframe 접근
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * contentframe의 window를 **이름 기반**으로 찾는다. 미래에셋은 <frameset>/<frame> 구조라
+ * `iframe[name=...]` 요소 질의로는 못 찾는다(실측 확인). window.frames 이름 접근은
+ * <frame>·<iframe> 모두 동작한다(Playwright page.frame("contentframe")과 동일 원리).
+ * @returns {Window|null}
+ */
+function getContentFrameWin() {
+  // 1) 이름 기반 프레임 접근 — <frame>/<iframe> 무관.
+  try {
+    const w = window.frames["contentframe"];
+    if (w) return w;
+  } catch (e) {
+    /* ignore */
+  }
+  // 2) window.frames 순회(window.name 기준).
+  try {
+    for (let i = 0; i < window.frames.length; i++) {
+      try {
+        if (window.frames[i].name === "contentframe") return window.frames[i];
+      } catch (e) {
+        /* cross-origin 프레임 — 스킵 */
+      }
+    }
+  } catch (e) {
+    /* ignore */
+  }
+  // 3) 폴백: 요소 질의(iframe 또는 frame).
+  try {
+    const el = document.querySelector('iframe[name="contentframe"], frame[name="contentframe"]');
+    if (el && el.contentWindow) return el.contentWindow;
+  } catch (e) {
+    /* ignore */
+  }
+  return null;
+}
+
 /** 동일출처 contentframe의 document. 없으면 top document(폴백). */
 function getContentDoc() {
-  const iframe = document.querySelector('iframe[name="contentframe"]');
-  if (iframe) {
+  const win = getContentFrameWin();
+  if (win) {
     try {
-      const doc = iframe.contentDocument || iframe.contentWindow?.document;
+      const doc = win.document;
       if (doc) return doc;
     } catch (e) {
       throw new Error(
@@ -177,9 +213,9 @@ async function requestBridgeInjection() {
   }
 }
 
-/** 진단용: 현재 문서에 contentframe(iframe) 이 존재하는지. */
+/** 진단용: contentframe(프레임셋 <frame> 또는 <iframe>)이 존재하는지(이름 기반). */
 function hasContentFrame() {
-  return !!document.querySelector('iframe[name="contentframe"]');
+  return !!getContentFrameWin();
 }
 
 /**
@@ -285,8 +321,13 @@ async function navigateTo(pagePath, readySel, area) {
   // contentframe URL이 목적지를 포함할 때까지 폴링(최대 ~12초)
   await waitFor(
     () => {
-      const iframe = document.querySelector('iframe[name="contentframe"]');
-      const url = iframe?.contentWindow?.location?.href || "";
+      const win = getContentFrameWin();
+      let url = "";
+      try {
+        url = win?.location?.href || "";
+      } catch (e) {
+        url = "";
+      }
       return url.includes(pagePath);
     },
     12000,
@@ -861,17 +902,17 @@ async function handleProbe() {
 
   push("URL(top): " + location.href);
 
-  const iframe = document.querySelector('iframe[name="contentframe"]');
-  if (iframe) {
+  const cfWin = getContentFrameWin();
+  if (cfWin) {
     let cf;
     try {
-      cf = iframe.contentWindow?.location?.href || "(빈 href)";
+      cf = cfWin.location?.href || "(빈 href)";
     } catch (e) {
       cf = "접근불가(cross-origin?): " + String(e?.message || e);
     }
-    push("contentframe: 있음 → " + cf);
+    push("contentframe(이름기반): 있음 → " + cf);
   } else {
-    push("contentframe: 없음");
+    push("contentframe(이름기반): 없음");
   }
 
   // 프레임 트리 전수 — 브리지가 top부터 동일출처 프레임을 재귀 순회하며 URL·전역·표수를 보고.
@@ -895,9 +936,9 @@ async function handleProbe() {
     push("프레임/전역 조회 실패(브리지): " + String(e?.message || e));
     let doc = document;
     try {
-      if (iframe && iframe.contentDocument) doc = iframe.contentDocument;
+      doc = getContentDoc();
     } catch (e2) {
-      /* cross-origin */
+      /* cross-origin 등 — top doc 사용 */
     }
     push(`DOM(${doc === document ? "top" : "contentframe"}, ISOLATED): table ${doc.querySelectorAll("table").length}개`);
   }
