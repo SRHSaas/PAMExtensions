@@ -46,9 +46,16 @@
 (function () {
   "use strict";
 
-  // 같은 프레임에 중복 설치 방지(선언형 + 폴백 주입이 겹쳐도 멱등).
-  if (window.__pamMiraeBridgeMain__) return;
-  window.__pamMiraeBridgeMain__ = true;
+  // 버전 핫스왑: 확장 리로드 후 페이지 새로고침 없이 브리지를 갱신하기 위함.
+  //  - 같은 버전이 이미 설치됐으면 중복 설치를 막는다(선언형 + 폴백 주입이 겹쳐도 멱등).
+  //  - 더 새 버전이 주입되면 공유 표식(__pamMiraeBridgeMainVer__)을 갱신하고, 이전 버전 리스너는
+  //    라우터 진입 시 자기 VER 불일치를 보고 스스로 무력화된다(아래 라우터 첫 줄).
+  //  - ping 응답에 ver 을 실어, ISOLATED 가 스테일 브리지를 감지해 재주입(핫스왑)하도록 한다.
+  // (주의: 이 버전 체계 도입 이전 구버전 브리지엔 이 체크가 없으므로, 구→신 전환은 페이지
+  //  새로고침이 한 번 필요하다. 이후 버전 간 전환은 핫스왑으로 자동 갱신된다.)
+  var VER = 3; // ⚠ page-bridge.js 변경 시마다 +1. index.js 의 EXPECTED_BRIDGE_VER 와 동기화.
+  if (window.__pamMiraeBridgeMainVer__ === VER) return; // 같은 버전 중복 방지
+  window.__pamMiraeBridgeMainVer__ = VER; // 최신 버전 표식
 
   // ── 대상 window 탐색 (top + contentframe) ────────────────────────────────────
 
@@ -305,6 +312,8 @@
   // ── 메시지 라우터 (same-frame) ───────────────────────────────────────────────
 
   window.addEventListener("message", async (ev) => {
+    // 핫스왑: 더 새 버전 브리지가 설치되면 이 (이전 버전) 리스너는 즉시 무력화된다.
+    if (window.__pamMiraeBridgeMainVer__ !== VER) return;
     // same-frame 전제: 요청은 같은 프레임 ISOLATED 가 window.postMessage 로 보낸다.
     //   따라서 ev.source 는 이 window 자신이어야 한다. 동시에 origin 도 같은 출처여야 한다.
     //   (다른 프레임/창에서 온 메시지는 무시 — same-frame 신뢰 모델.)
@@ -319,6 +328,7 @@
         case "ping":
           payload = {
             result: "pong",
+            ver: VER, // ISOLATED 가 스테일 브리지(ver 불일치)를 감지해 핫스왑하도록.
             frames: { top: true, content: !!getContentWin() },
           };
           break;

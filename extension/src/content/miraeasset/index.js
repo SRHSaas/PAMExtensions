@@ -46,6 +46,10 @@ const MSG = Object.freeze({
 const SCRAPE_TARGET = Object.freeze({ DAILY_ASSET: "dailyAsset", TRANSACTION: "transaction" });
 const SOURCE = Object.freeze({ MIRAEASSET: "miraeasset" });
 
+// page-bridge.js 의 VER 과 동기화. ping 응답 ver 이 이 값과 다르면 스테일/구버전 브리지로 보고
+// 핫스왑(INJECT_BRIDGE 재주입)한다. 확장 리로드 후 페이지 새로고침 없이 브리지가 갱신되도록.
+const EXPECTED_BRIDGE_VER = 3; // ⚠ page-bridge.js VER 과 함께 증가.
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 페이지 경로 (원본 config.json) — openHp(path, secure)로 contentframe을 이동시킨다.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -193,7 +197,15 @@ async function ensureBridge(timeoutMs = 12000) {
   while (Date.now() < deadline) {
     try {
       const res = await bridgeSend({ cmd: "ping" }, 1200);
-      if (res && res.result === "pong") return true;
+      if (res && res.result === "pong") {
+        if (res.ver === EXPECTED_BRIDGE_VER) return true;
+        // 스테일/구버전 브리지(ver 불일치 또는 ver 없음) → 핫스왑 주입을 즉시 1회 시도.
+        if (!injected) {
+          injected = await requestBridgeInjection();
+          await sleep(300);
+        }
+        // 핫스왑 후 새 버전이 응답하도록 다음 폴링으로 재확인.
+      }
     } catch (e) {
       lastErr = e;
     }
