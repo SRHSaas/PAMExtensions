@@ -393,3 +393,61 @@ normalizer가 알아야 할, 원문에서 **벗어난** 처리는 이 4가지뿐
   (`executeScript{ frameIds:[0], world:"MAIN", files:[page-bridge.js] }`). SCRAPE_REQUEST 라우팅과 분리, 비동기 응답.
 
 이 변경들도 **raw shape/ normalizer 계약과 무관**하다(수집 경로/주입 신뢰성만 개선).
+
+---
+
+## 10. 필드 커버리지 검증 (참조 구현 vs 확장 vs ingest 계약) · 2026-06-17
+
+> 참조 `WebPriceTracker/miraeasset/{scraper.js,canonical.js}` 의 수집/매핑을, 확장 수집부
+> `extension/src/content/miraeasset/index.js` 와 ingest 계약 `SRHFinance/lib/ingest.ts` 에
+> 영역별로 대조. **결론: ingest 계약 범위 안에서 누락 필드 없음 — 보강 불필요.**
+
+범례: 참조✓ = 참조가 수집, 확장✓ = 확장 raw 가 제공, 계약✓ = ingest.ts 가 받는 필드.
+
+### 10.1 accounts (IngestAccount: account_no, account_type, alias)
+| 필드 | 참조 | 확장 | 계약 | 비고 |
+|---|---|---|---|---|
+| account_no | ✓(accountNo) | ✓(accountNo / acno) | ✓ | 하이픈 제거는 normalizer |
+| account_type | ✓(accountType, 일자별) | ✓(accountType) | ✓ | tx 경로는 참조도 `""`(확장도 동일) |
+| alias | ✓(tx: raw.account 라벨; 일자별은 accountType 폴백) | ✓(tx raw `account` 라벨; 일자별 alias=`""`) | ✓ | normalizer 가 `alias || account_type` 폴백(§5) |
+
+### 10.2 daily_assets (date, account_no, total_asset, eval_amount, profit_loss, profit_rate)
+| 필드 | 참조 | 확장 | 계약 | |
+|---|---|---|---|---|
+| total_asset / eval_amount / profit_loss / profit_rate | ✓ | ✓(totalAsset/evalAmount/profitLoss/profitRate) | ✓ | **전부 일치** |
+
+### 10.3 daily_holdings (date, name, category, quantity, buy_amount, eval_amount, profit_loss, profit_rate)
+| 필드 | 참조 | 확장 | 계약 | |
+|---|---|---|---|---|
+| name/category/quantity/buy_amount/eval_amount/profit_loss/profit_rate | ✓ | ✓ | ✓ | **전부 일치**. (계좌별자산 탭의 currentPrice/avgBuyPrice 는 계약에 없음 → 무관) |
+
+### 10.4 transactions (… unit_price, broker_quantity, exchange_rate, currency, detail 포함)
+| 필드 | 참조 | 확장 | 계약 | 비고 |
+|---|---|---|---|---|
+| date/type/name/quantity/amount/foreign_amount/fee/balance | ✓ | ✓ | ✓ | |
+| unit_price | ✓(tr_upr) | ✓(unitPrice←tr_upr) | ✓ | 없을 때 `(외화‖원화)/수량` 계산은 **normalizer**(수치) 몫 |
+| broker_quantity | ✓(소수거래) | ✓(brokerQuantity) | ✓ | |
+| exchange_rate | ✓(a03.json bas_exr) | ✓(exchangeRate←enrichFxRates) | ✓ | a03.json 보강 이식됨 |
+| currency | ✓(curr_cd) | ✓ | ✓ | |
+| detail | ✓ | ✓(소수/외화 원시값) | ✓ | |
+
+### 10.5 dividends (date, account_no, type, name, amount, foreign_amount, fee)
+| 항목 | 참조 | 확장 | 계약 | 비고 |
+|---|---|---|---|---|
+| 배당 분리 | canonical 빌드 시 `/배당|분배금/` 분리 | raw 는 분리 안 함(원문 `type` 유지) | ✓ | **설계상 일치** — 분리는 normalizer 책임. 배당 행 데이터(date/type/name/amount/foreign_amount/fee)는 transactions raw 안에 모두 존재 → 누락 없음 |
+
+### 10.6 데이터 영역(보강 경로) 점검
+- p01 상세팝업(openTransactionDetail): 참조도 **일반 수집 경로에서 미사용**(디버그용). hkd1004.list + a03.json 로 단가/수량/환율이 커버됨 → 확장이 동일하게 이식, 누락 아님.
+- a03.json 환율 보강: 확장 `enrichFxRates`→`bridgeFxRates` 로 이식 완료.
+
+### 10.7 ingest 계약 **밖** 영역 (보강 안 함 — 사용자/SRHFinance 결정 사항)
+| 영역 | 참조 함수 | 상태 | 추가하려면 |
+|---|---|---|---|
+| My자산 요약(자산총액/보유상품평가/D+2예수금) | `scrapeMyAsset.summary` | 계약에 대응 테이블/필드 **없음** | SRHFinance 에 신규 테이블(예: `daily_account_summary` 의 cash/loan) + ingest.ts 인터페이스 + /api/ingest 적재 필요 |
+| 오늘/이번달/올해 수익(amount,rate) | `scrapeMyAsset.*Profit` | 계약에 **없음**(표시 전용/파생 지표) | 동상. 일자별 자산에서 파생 계산 가능하므로 신규 적재 불필요할 수도 |
+| 월별 자산추이(monthlyTrend) | `scrapeMyAsset.monthlyTrend` | 계약에 **없음** | daily_assets 로 서버에서 집계 가능 → 별도 수집 불요 |
+| 상품별 자산(productAssets: 주식/펀드 비중) | `scrapeMyAsset.productAssets` | 계약에 **없음** | daily_holdings.category 로 서버 집계 가능 → 별도 수집 불요 |
+| 보유 currentPrice/avgBuyPrice | `parseAccountAsset.holdings` | 계약 daily_holdings 에 해당 필드 **없음** | ingest.ts 에 필드 추가 필요(현재 buy_amount/eval_amount 로 충분) |
+
+> 위 영역은 **SRHFinance 스키마 변경이 선행**되어야 적재 가능하므로, 본 검증에서는 추가 구현하지
+> 않고 기록만 한다(코디네이터 지시·역할 경계 준수). 추가 여부는 사용자 결정.
