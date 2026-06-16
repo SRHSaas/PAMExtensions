@@ -37,7 +37,11 @@
 // 로드 즉시 "Cannot use import statement outside a module"로 스크립트 전체가 죽고 onMessage
 // 리스너가 등록되지 않아 "Receiving end does not exist"가 난다. → 이 어댑터가 쓰는 소수 상수만
 // 인라인으로 둔다. 값은 src/shared/messages.js(단일 정의)와 **반드시 일치**시킨다(동기화 필수).
-const MSG = Object.freeze({ SCRAPE_REQUEST: "SCRAPE_REQUEST", SCRAPE_RESULT: "SCRAPE_RESULT" });
+const MSG = Object.freeze({
+  SCRAPE_REQUEST: "SCRAPE_REQUEST",
+  SCRAPE_RESULT: "SCRAPE_RESULT",
+  INJECT_BRIDGE: "INJECT_BRIDGE", // ↔ src/shared/messages.js MSG.INJECT_BRIDGE (동기화 필수)
+});
 const SCRAPE_TARGET = Object.freeze({ DAILY_ASSET: "dailyAsset", TRANSACTION: "transaction" });
 const SOURCE = Object.freeze({ MIRAEASSET: "miraeasset" });
 
@@ -110,34 +114,31 @@ function getContentDoc() {
   return document;
 }
 
-/** contentframe의 window(페이지 전역이 사는 곳). 없으면 top window. */
-function getContentWin() {
-  const iframe = document.querySelector('iframe[name="contentframe"]');
-  return (iframe && iframe.contentWindow) || window;
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
-// 페이지 월드 브리지 클라이언트 (CSP-safe, eval 없음)
+// 페이지 월드 브리지 클라이언트 (CSP-safe, eval 없음, **same-frame messaging**)
 //   페이지 JS 전역(함수/데이터)은 MAIN-world content script(page-bridge.js)가 접근한다.
 //   여기(ISOLATED)는 **고정 명령**만 postMessage 로 보내고 응답을 받는다. 코드 본문 전송 없음.
 //   명령: ping / call(fn,args) / get(path) / setdate / fxrates  — 자세한 계약은 page-bridge.js.
-//   대상 window: contentframe 의 window(페이지 전역이 사는 곳). 동일출처라 postMessage 가능.
+//
+//   ★ 토폴로지(중요): ISOLATED 와 MAIN 브리지는 **둘 다 top 프레임**에서 돌며, 같은 프레임의
+//     window message 버스를 공유한다. 따라서 **자기 window** 에 postMessage 하고 **자기 window**
+//     에서 응답을 듣는다. (iframe.contentWindow 로 cross-frame postMessage/수신 하던 패턴은 폐기
+//     — 월드 경계상 신뢰 불가였다.) contentframe 전역 접근은 브리지가 내부에서 직접 한다.
 // ─────────────────────────────────────────────────────────────────────────────
 
 let rpcSeq = 0;
 
 /**
- * 브리지에 명령 1건을 보내고 응답을 받는다(저수준). 응답은 {__pam:"res", id, ...payload}.
+ * 브리지에 명령 1건을 보내고 응답을 받는다(저수준, same-frame). 응답은 {__pam:"res", id, ...payload}.
  * @param {object} req  { cmd, ...명령필드 } — id 는 내부에서 부여.
  * @param {number} [timeoutMs]
  * @returns {Promise<object>}  브리지 payload(예: {found,result} / {value} / {ok,rows} ...)
  */
 function bridgeSend(req, timeoutMs = 15000) {
-  const win = getContentWin();
   const id = "pam-" + ++rpcSeq;
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
-      win.removeEventListener("message", onMsg);
+      window.removeEventListener("message", onMsg);
       reject(
         new Error(
           `[miraeasset] 브리지 응답 타임아웃(cmd=${req.cmd}). ` +
@@ -146,39 +147,67 @@ function bridgeSend(req, timeoutMs = 15000) {
       );
     }, timeoutMs);
     function onMsg(ev) {
+      // same-frame 응답만 신뢰: 자기 window 가 보낸(자기 origin) __pam res.
+      if (ev.source !== window) return;
       const m = ev.data;
       if (!m || m.__pam !== "res" || m.id !== id) return;
       clearTimeout(timer);
-      win.removeEventListener("message", onMsg);
+      window.removeEventListener("message", onMsg);
       if (m.error) reject(new Error("[miraeasset:bridge] " + m.error));
       else resolve(m);
     }
-    win.addEventListener("message", onMsg);
-    win.postMessage(Object.assign({ __pam: "req", id }, req), "*");
+    window.addEventListener("message", onMsg);
+    // 자기 window 로 전송(same-frame). 같은 프레임 MAIN 브리지가 같은 버스에서 받는다.
+    window.postMessage(Object.assign({ __pam: "req", id }, req), window.location.origin);
   });
 }
 
+/** background 에 MAIN-world 브리지 주입을 요청(선언형 주입 실패 폴백). 성공 여부 반환. */
+async function requestBridgeInjection() {
+  try {
+    const res = await chrome.runtime.sendMessage({ type: MSG.INJECT_BRIDGE });
+    return !!(res && res.ok);
+  } catch (e) {
+    return false;
+  }
+}
+
+/** 진단용: 현재 문서에 contentframe(iframe) 이 존재하는지. */
+function hasContentFrame() {
+  return !!document.querySelector('iframe[name="contentframe"]');
+}
+
 /**
- * 준비 핸드셰이크. MAIN-world 브리지가 ping 에 pong 으로 응답할 때까지 폴링 대기한다.
- * (인라인 주입을 하지 않으므로, document_start 설치된 브리지가 응답할 때까지 기다린다.)
- * iframe 네비게이션(openHp) 후 새 문서에 브리지가 재설치되므로, 네비게이션마다 다시 호출한다.
- * @param {number} [timeoutMs]
+ * 준비 핸드셰이크(same-frame ping/pong). 브리지가 응답할 때까지 폴링하되, 일정 시간 무응답이면
+ * background 에 programmatic 주입(INJECT_BRIDGE)을 1회 요청하고 다시 폴링한다.
+ * iframe 네비게이션(openHp) 후에도 브리지는 top 프레임에 한 번 설치돼 있으면 그대로라
+ * 매번 가볍게 재확인만 한다(보통 즉시 pong).
+ * @param {number} [timeoutMs]  총 대기 한도
  */
 async function ensureBridge(timeoutMs = 12000) {
   const deadline = Date.now() + timeoutMs;
+  let injected = false;
   let lastErr = null;
+  // 1차: 선언형 주입된 브리지가 응답하는지 짧게 폴링.
   while (Date.now() < deadline) {
     try {
-      const res = await bridgeSend({ cmd: "ping" }, 1500);
+      const res = await bridgeSend({ cmd: "ping" }, 1200);
       if (res && res.result === "pong") return true;
     } catch (e) {
       lastErr = e;
     }
+    // 첫 무응답 구간(~2.5초) 후 programmatic 주입 폴백 1회 시도.
+    if (!injected && Date.now() - (deadline - timeoutMs) > 2500) {
+      injected = await requestBridgeInjection();
+      // 주입 직후 설치/실행 여유.
+      await sleep(300);
+    }
     await sleep(200);
   }
   throw new Error(
-    "[miraeasset] 페이지 브리지 준비 실패(ping 무응답). page-bridge.js(MAIN world, all_frames) " +
-      "주입 여부/CSP 확인 필요. " +
+    "[miraeasset] 페이지 브리지 준비 실패(same-frame ping 무응답). " +
+      `경로=same-frame(top window), 주입폴백시도=${injected}, contentframe존재=${hasContentFrame()}. ` +
+      "page-bridge.js(MAIN world) 주입 또는 CSP/world 지원(Chrome·Edge 111+) 확인 필요. " +
       (lastErr ? String(lastErr.message || lastErr) : "")
   );
 }
@@ -232,7 +261,9 @@ async function bridgeFxRates(items, timeoutMs = 60000) {
  * @param {string} area      진단 메시지용 영역명
  */
 async function navigateTo(pagePath, readySel, area) {
-  // openHp 는 페이지 전역 함수 → 현재 contentframe 브리지에 call. (네비 전 브리지 준비)
+  // openHp 는 페이지 전역 함수 → top 프레임 브리지가 top→contentframe 자동 탐색해 호출.
+  // 브리지는 top 프레임에 한 번 설치되면 iframe 네비게이션과 무관하게 유지되므로
+  // 여기서 한 번만 준비 확인하면 된다(same-frame).
   await ensureBridge();
   const callRes = await bridgeCall("openHp", [pagePath, false]);
   if (callRes && callRes.found === false) {
@@ -250,8 +281,6 @@ async function navigateTo(pagePath, readySel, area) {
   );
   // 페이지 내 스크립트(계좌목록 ajax 등) 초기화 여유 + 대상 셀렉터 등장 대기
   await sleep(800);
-  // iframe 이 새 문서로 바뀌었으므로 브리지(document_start 재설치)가 응답할 때까지 다시 핸드셰이크.
-  await ensureBridge();
   await waitForSelector(readySel, 12000, area);
 }
 

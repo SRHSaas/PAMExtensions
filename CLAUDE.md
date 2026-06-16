@@ -82,3 +82,4 @@
 | 2026-06-17 | content script ESM 구문(import/export) 제거(인라인 상수) + background 자동주입 폴백 | content/miraeasset, background, chrome-extension-mv3·brokerage-scraper 스킬 | 실행 시 "Receiving end does not exist" — content_scripts는 클래식 스크립트라 import/export 시 파싱 실패로 리스너 미등록. 스킬에 함정 반영 |
 | 2026-06-17 | 버전 관리 시작 + CHANGELOG 작성 | 전체(.gitignore, CHANGELOG.md, 8개 커밋) | 의미 있는 구성요소 단위로 초기 이력 확립 |
 | 2026-06-17 | CSP-safe 페이지 월드 브리지 재설계 | content/miraeasset(+page-bridge.js), manifest, chrome-extension-mv3·brokerage-scraper 스킬 | 미래에셋 CSP가 인라인 script·eval 차단 → MAIN-world content script + 고정 명령 프로토콜(eval 제거). 스킬에 함정 반영 |
+| 2026-06-17 | 브리지 same-frame 토폴로지 + 주입 폴백 | content/miraeasset, background, messages(INJECT_BRIDGE) | cross-frame(iframe) 메시징이 월드 경계상 ping 무응답 → same-frame(top) 송수신 + 브리지의 top→contentframe 자동탐색 + declarative MAIN 미주입 시 executeScript 폴백 |

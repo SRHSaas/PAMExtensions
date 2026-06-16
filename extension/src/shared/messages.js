@@ -37,6 +37,12 @@ export const MSG = {
   UPLOAD_RESULT: "UPLOAD_RESULT",
   /** background → popup. 파이프라인 진행 단계 알림. */
   STATUS: "STATUS",
+  /**
+   * content(ISOLATED) → background. MAIN-world 페이지 브리지(page-bridge.js)가 선언형
+   * content_scripts로 주입되지 않았을 때(확장 전부터 열린 탭 등) background가
+   * chrome.scripting.executeScript({world:"MAIN"})로 주입하도록 요청. sendResponse {ok}.
+   */
+  INJECT_BRIDGE: "INJECT_BRIDGE",
 };
 
 /**

@@ -118,6 +118,29 @@ async function requestScrape(tabId, payload) {
   }
 }
 
+// ── MAIN-world 페이지 브리지 주입 (선언형 주입 실패 폴백) ────────────────────
+
+/**
+ * page-bridge.js 를 대상 탭의 **top 프레임 MAIN world** 에 주입한다.
+ * 선언형 content_scripts(world:MAIN)가 어떤 이유로든 적용되지 않은 탭(확장 로드 전부터 열린 탭,
+ * world 미지원 등)을 위한 폴백. content(ISOLATED)가 same-frame ping 무응답 시 INJECT_BRIDGE 로 요청.
+ * 브리지는 멱등(중복 설치 가드)하므로 중복 주입돼도 안전하다.
+ * @param {number} tabId
+ * @returns {Promise<{ok:boolean, error?:string}>}
+ */
+async function injectPageBridge(tabId) {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId, frameIds: [0] }, // top 프레임만. 브리지가 contentframe 전역까지 탐색함.
+      world: "MAIN",
+      files: ["src/content/miraeasset/page-bridge.js"],
+    });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: String(err?.message || err) };
+  }
+}
+
 // ── 설정된 SRHFinance origin 조회 ────────────────────────────────────────────
 
 /** @returns {Promise<string>} options에서 설정한 origin(없으면 dev 기본값). */
@@ -198,7 +221,7 @@ async function runPipeline(req) {
  * chrome.runtime 메시지 라우터. SCRAPE_REQUEST만 여기서 받아 파이프라인을 시작한다.
  * (SCRAPE_RESULT는 content가 SCRAPE_REQUEST의 응답으로 직접 반환하므로 여기로 오지 않는다.)
  */
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message !== "object") return false;
 
   switch (message.type) {
@@ -207,6 +230,17 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       runPipeline(message.payload || {});
       sendResponse({ ok: true, started: true });
       return false; // 동기 응답 완료.
+    }
+    case MSG.INJECT_BRIDGE: {
+      // content(ISOLATED)가 same-frame ping 무응답 시 MAIN-world 브리지 주입을 요청.
+      // 요청 보낸 탭(sender.tab)의 top 프레임에 page-bridge.js 를 주입하고 결과를 회신한다.
+      const tabId = sender?.tab?.id;
+      if (tabId == null) {
+        sendResponse({ ok: false, error: "발신 탭 식별 불가(sender.tab 없음)." });
+        return false;
+      }
+      injectPageBridge(tabId).then(sendResponse);
+      return true; // 비동기 응답.
     }
     // STATUS / UPLOAD_RESULT 는 background가 popup으로 보내는 단방향 메시지라 수신 분기 불필요.
     default:
