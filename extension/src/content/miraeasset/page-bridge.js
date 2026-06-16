@@ -260,16 +260,17 @@
       "accountLoaderLayer", "hkd1001", "hkd1002", "hkd1004", "jQuery", "$",
     ];
     var RE = /^(openhp|subtab|hkd|jango|account|asset|fnsearch|callajax|gopage|search)/i;
-    function frameInfo(which, win) {
-      if (!win) return { which: which, present: false };
-      var href = null;
-      try { href = win.location.href; } catch (e) { href = "(접근불가)"; }
+    function frameInfo(label, win) {
+      var info = { label: label, present: true };
+      try { info.name = win.name || ""; } catch (e) { info.name = "?"; }
+      try { info.href = win.location.href; } catch (e) { info.href = "(접근불가:cross-origin?)"; info.crossOrigin = true; }
       var hasList = [];
       for (var i = 0; i < NAMES.length; i++) {
         var n = NAMES[i], t;
         try { t = typeof win[n]; } catch (e2) { t = "?"; }
         if (t !== "undefined") hasList.push(n + ":" + t);
       }
+      info.hasList = hasList;
       var others = [];
       try {
         var keys = Object.keys(win);
@@ -277,16 +278,27 @@
           if (RE.test(keys[k]) && NAMES.indexOf(keys[k]) === -1) others.push(keys[k]);
         }
       } catch (e3) { /* ignore */ }
-      return { which: which, present: true, href: href, hasList: hasList, others: others };
+      info.others = others;
+      try { info.tables = win.document.querySelectorAll("table").length; } catch (e4) { info.tables = -1; }
+      return info;
     }
-    var cands = candidateWindows(); // top (+ content if 존재)
+    // Playwright는 page.frame("contentframe")로 프레임 트리 어디서든 찾는다. 우리도
+    // top 부터 동일출처 프레임을 재귀 순회해 어느 프레임에 openHp·데이터가 있는지 전수 보고.
     var frames = [];
-    var sawContent = false;
-    for (var i = 0; i < cands.length; i++) {
-      frames.push(frameInfo(cands[i][0], cands[i][1]));
-      if (cands[i][0] === "content") sawContent = true;
+    function walk(win, label, depth) {
+      if (depth > 5 || frames.length > 25) return;
+      frames.push(frameInfo(label, win));
+      var n = 0;
+      try { n = win.frames.length; } catch (e) { return; }
+      for (var i = 0; i < n; i++) {
+        var child;
+        try { child = win.frames[i]; } catch (e2) { continue; }
+        var nm = "";
+        try { nm = child.name || ""; } catch (e3) { /* ignore */ }
+        walk(child, label + " > " + (nm || "[" + i + "]"), depth + 1);
+      }
     }
-    if (!sawContent) frames.push({ which: "content", present: false });
+    walk(window, "top", 0);
     return { frames: frames };
   }
 

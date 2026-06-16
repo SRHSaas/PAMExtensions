@@ -862,36 +862,33 @@ async function handleProbe() {
     push("contentframe: 없음");
   }
 
-  // 페이지 전역(openHp 등) — 브리지로 top/contentframe 양쪽 조회.
+  // 프레임 트리 전수 — 브리지가 top부터 동일출처 프레임을 재귀 순회하며 URL·전역·표수를 보고.
   try {
     await ensureBridge(6000);
-    const res = await bridgeSend({ cmd: "probe" }, 6000);
+    const res = await bridgeSend({ cmd: "probe" }, 8000);
     const frames = (res && res.result && res.result.frames) || [];
+    push(`프레임 ${frames.length}개:`);
     for (const f of frames) {
-      if (!f || !f.present) {
-        push(`[${f ? f.which : "?"}] (없음)`);
-        continue;
-      }
-      push(`[${f.which}] ${f.href || ""}`);
-      push("  주요전역: " + (f.hasList && f.hasList.length ? f.hasList.join(", ") : "(해당 없음)"));
+      const nm = f.name ? ` name="${f.name}"` : "";
+      const tb = typeof f.tables === "number" ? ` tables=${f.tables}` : "";
+      push(`• [${f.label}]${nm}${tb}`);
+      push(`    url: ${f.href || ""}`);
+      push("    주요전역: " + (f.hasList && f.hasList.length ? f.hasList.join(", ") : "(해당 없음)"));
       if (f.others && f.others.length) {
-        push("  기타후보(앞 30개): " + f.others.slice(0, 30).join(", "));
+        push("    기타후보(앞 20개): " + f.others.slice(0, 20).join(", "));
       }
     }
   } catch (e) {
-    push("페이지 전역 조회 실패(브리지): " + String(e?.message || e));
+    // 브리지 실패해도 ISOLATED가 직접 보는 DOM은 보고(graceful).
+    push("프레임/전역 조회 실패(브리지): " + String(e?.message || e));
+    let doc = document;
+    try {
+      if (iframe && iframe.contentDocument) doc = iframe.contentDocument;
+    } catch (e2) {
+      /* cross-origin */
+    }
+    push(`DOM(${doc === document ? "top" : "contentframe"}, ISOLATED): table ${doc.querySelectorAll("table").length}개`);
   }
-
-  // DOM 표 구조 — 데이터가 사는 문서(contentframe 우선) 기준.
-  let doc = document;
-  try {
-    if (iframe && iframe.contentDocument) doc = iframe.contentDocument;
-  } catch (e) {
-    /* cross-origin 등 — top doc 사용 */
-  }
-  const tables = doc.querySelectorAll("table");
-  const ids = [...tables].map((t) => t.id || "(무명)").slice(0, 12);
-  push(`DOM(${doc === document ? "top" : "contentframe"}): table ${tables.length}개` + (ids.length ? " / id=" + ids.join(",") : ""));
 
   return { ok: true, report: lines.join("\n") };
 }
