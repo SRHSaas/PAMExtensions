@@ -291,7 +291,76 @@ normalizer가 알아야 할, 원문에서 **벗어난** 처리는 이 4가지뿐
 | 거래 환율보강 | `jQuery.ajax POST /hkd/hkd1004/a03.json` | 응답 `DLCTN[0].bas_exr` |
 
 > **이식 메모(중요):** 위 `openHp/subTabChange/accountLoaderLayer/hkd1004/dateOfJango/jQuery`는
-> **페이지 월드 전역**이다. content script(격리 월드)는 직접 못 부른다. 어댑터는 동일출처
-> `iframe[name="contentframe"]`에 RPC 브리지(`<script>` 주입 + `window.postMessage`)를 심어
-> 호출한다(`pageEval`/`pageCall`). DOM 읽기는 `iframe.contentDocument`로 직접 한다.
+> **페이지 월드 전역**이다. content script(격리 월드)는 직접 못 부른다. 접근 방식은 §9의
+> CSP-safe 브리지 프로토콜을 따른다. DOM 읽기/클릭은 `iframe.contentDocument`로 ISOLATED 직접.
 > 셀렉터가 비면 `requireEl`이 **영역/셀렉터를 담아 throw**한다(조용한 빈 배열 금지).
+
+---
+
+## 9. 페이지 월드 브리지 프로토콜 (CSP-safe) — normalizer 무관, qa/유지보수용
+
+> **이 §는 raw shape 와 무관하다**(normalizer 입력 계약은 §1~§7 그대로 불변). 어떻게 raw 를
+> 모으는지(월드 경계/메시징)에 대한 구현 메모로, qa·후속 유지보수가 읽는다.
+
+### 9.1 배경 — 왜 eval 브리지를 버렸나
+`securities.miraeasset.com` 의 응답 CSP 가 `script-src 'self' 'wasm-unsafe-eval' ...` 라:
+1. **인라인 `<script>` 주입 차단** (`unsafe-inline` 없음) → 격리 월드에서 페이지 월드로 코드를
+   심을 수 없다.
+2. **`eval`/`new Function`/`AsyncFunction` 차단** (`unsafe-eval` 없음, wasm 만 허용) → 코드 본문을
+   페이지 월드로 보내 실행하는 방식 자체가 불가.
+
+따라서 "임의 코드 본문 전송" 모델을 폐기하고, **MAIN-world content script + 고정 명령 프로토콜**로
+재설계했다.
+
+### 9.2 두 파일 / 두 월드
+| 파일 | manifest world | frames | run_at | 역할 |
+|---|---|---|---|---|
+| `src/content/miraeasset/page-bridge.js` | `MAIN` | `all_frames:true` | `document_start` | 페이지 JS 전역(함수/데이터) 접근. 고정 명령만 처리. **eval/Function 없음.** |
+| `src/content/miraeasset/index.js` | (기본 ISOLATED) | top only | `document_idle` | `chrome.runtime` 메시징 + DOM 읽기/클릭 + 브리지에 명령 전송. |
+
+- 확장 주입 MAIN-world 스크립트는 **페이지 CSP `script-src` 제약을 받지 않는다**(Chrome/Edge 111+).
+- 브리지는 `all_frames` 라 top + `contentframe`(iframe) **양쪽 MAIN world** 에 설치되고,
+  iframe 이 `openHp` 로 새 문서로 바뀌면 그 새 문서에도 `document_start` 로 자동 재설치된다.
+- ISOLATED `index.js` 는 top frame 에만 둔다(중복 `onMessage` 핸들러로 인한 이중 스크랩 방지).
+  동일출처라 `iframe.contentDocument`(DOM)·`iframe.contentWindow.postMessage`(브리지)로 직접 접근.
+
+### 9.3 메시지 프로토콜 (postMessage, **코드 본문 없음**)
+요청 `{__pam:"req", id, cmd, ...}` → 응답 `{__pam:"res", id, ...payload}`. 출처 게이팅은
+**origin 일치**(`securities.miraeasset.com` 단일 출처) + `__pam` 태그.
+
+| cmd | 요청 필드 | 동작 | 응답 |
+|---|---|---|---|
+| `ping` | — | 준비 확인(핸드셰이크) | `{result:"pong"}` |
+| `call` | `fn`(점경로), `args[]` | `window[fn](...args)` 호출. 함수 없으면 무시 | `{found, result?}` |
+| `get` | `path`(점경로) | 페이지 전역 읽기 → **구조화복제 가능 1차 데이터만**(DOM/함수/순환 제거) | `{found, value?}` |
+| `setdate` | `pickerId,y,m,d` | jQuery UI datepicker 설정(고정 로직) | `{ok, reason?}` |
+| `fxrates` | `items[{tr_dt,tr_srno}]`, `acno?` | a03.json POST 루프(jQuery.ajax, 고정) | `{ok, rows[]?}` |
+
+ISOLATED 의 `ensureBridge()` 는 인라인 주입 대신 **ping/pong 폴링**으로 브리지 준비를 기다린다
+(타임아웃 시 throw). `navigateTo` 는 openHp 전·후로 `ensureBridge()` 를 호출해 네비게이션마다
+재설치된 브리지를 다시 확인한다(브리지 준비 캐시를 들고 있지 않음).
+
+### 9.4 각 동작의 월드 분류 (구 `pageEval` 11개 호출부 → 재분류)
+| 동작 | 분류 | 구현 |
+|---|---|---|
+| 페이지 이동(`openHp`) | **call** | `bridgeCall("openHp",[path,false])` |
+| 일자별 탭(`subTabChange`) | **call** | `bridgeCall("subTabChange",["2"])` |
+| 일자별 조회(`dateOfJango('first')`) | **call** | `bridgeCall("dateOfJango",["first"])` |
+| 일자별 더보기 버튼 표시 판정 | **ISOLATED DOM** | `getContentDoc().querySelector('#moreListFirst').style.display` |
+| 일자별 더보기 트리거(`dateOfJango/Detail('more')`) | **call** | `bridgeCall(fnName,["more"])` |
+| 거래 계좌목록(`accountLoaderLayer.list`) | **get**(+DOM 폴백) | `bridgeGet("accountLoaderLayer.list")` |
+| 거래 계좌선택(`onClickAccount`) | **call**(+DOM 폴백) | `bridgeCall("accountLoaderLayer.onClickAccount",[i])` |
+| 거래 조회버튼(`#searchButton`) 클릭 | **ISOLATED DOM** | `getContentDoc().querySelector('#searchButton')?.click()` |
+| 거래 더보기(`#moreListS a`) 클릭 | **ISOLATED DOM** | 직접 `.click()` |
+| 거래표 파싱(`#simpleTable`) | **ISOLATED DOM** | `getContentDoc()` 직접 순회 |
+| 거래 원시데이터(`hkd1004.list`) | **get** | `bridgeGet("hkd1004.list")` (ISOLATED 에서 표와 조인) |
+| 환율 보강(a03.json) | **fxrates** | `bridgeFxRates(items)` |
+| datepicker 설정 | **setdate** | `bridgeSetDate(pickerId,y,m,d)` |
+
+> 핵심 원칙: **DOM 이면 ISOLATED 직접, 페이지 함수 트리거면 call, 페이지 데이터 읽기면 get,
+> 그 외 jQuery 특화(datepicker/ajax)는 전용 고정 명령**. eval 코드 문자열은 어디에도 없다.
+
+### 9.5 raw 영향 — 없음
+브리지 재설계는 **수집 방법**만 바꾼다. §2/§3 의 raw 필드·구조·문자열 보존 규칙은 **그대로**다.
+`get`/`fxrates` 가 돌려주는 페이지 데이터는 `toPlain` 으로 구조화복제 가능 형태로 정제되지만
+값 자체는 원문 그대로(숫자화/정규화 없음) — normalizer 계약 불변.

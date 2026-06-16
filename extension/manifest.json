@@ -21,6 +21,13 @@
   "content_scripts": [
     {
       "matches": ["https://securities.miraeasset.com/*"],
+      "js": ["src/content/miraeasset/page-bridge.js"],
+      "world": "MAIN",
+      "all_frames": true,
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["https://securities.miraeasset.com/*"],
       "js": ["src/content/miraeasset/index.js"],
       "run_at": "document_idle"
     }
