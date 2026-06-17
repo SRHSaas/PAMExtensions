@@ -224,27 +224,38 @@ function nextDay(dateStr) {
  * @throws 엔드포인트 없음/네트워크/미로그인 시 사람이 읽을 메시지로 throw.
  */
 async function fetchLastDates(origin) {
-  const url = `${String(origin || "").replace(/\/+$/, "")}${LAST_DATES_PATH}`;
+  const base = String(origin || "").replace(/\/+$/, "");
+  const url = `${base}${LAST_DATES_PATH}`;
   let res;
   try {
     res = await fetch(url, { method: "GET", credentials: "include" });
   } catch (err) {
+    // 응답 자체를 못 받음 — host 권한 미허용(옵션에서 origin 미저장) / 네트워크 / 오프라인.
     throw new Error(
-      "자동 기간 조회 실패 — SRHFinance에 last-dates API가 없거나 로그인 필요. 수동 기간을 쓰세요."
+      `자동 기간 조회 실패 — ${base} 에 연결하지 못했습니다(네트워크 또는 host 권한 미허용). ` +
+        `설정(옵션)에서 origin 을 다시 저장해 권한을 허용하거나, '지정' 기간을 쓰세요.`
     );
   }
   if (!res.ok) {
-    throw new Error(
-      "자동 기간 조회 실패 — SRHFinance에 last-dates API가 없거나 로그인 필요. 수동 기간을 쓰세요."
-    );
+    if (res.status === 401 || res.status === 403) {
+      throw new Error(
+        `자동 기간 조회 실패 — ${base} 에 로그인/승인되어 있지 않습니다(HTTP ${res.status}). ` +
+          `그 주소를 브라우저 탭에서 열어 승인 계정으로 로그인한 뒤 다시 시도하거나, '지정' 기간을 쓰세요.`
+      );
+    }
+    if (res.status === 404) {
+      throw new Error(
+        `자동 기간 조회 실패 — ${base} 에 last-dates API가 없습니다(HTTP 404, 미배포). ` +
+          `SRHFinance를 배포하거나, '지정' 기간을 쓰세요.`
+      );
+    }
+    throw new Error(`자동 기간 조회 실패 — ${base} (HTTP ${res.status}). '지정' 기간을 쓰세요.`);
   }
   let data;
   try {
     data = await res.json();
   } catch {
-    throw new Error(
-      "자동 기간 조회 실패 — SRHFinance에 last-dates API가 없거나 로그인 필요. 수동 기간을 쓰세요."
-    );
+    throw new Error(`자동 기간 조회 실패 — ${base} 응답이 JSON 형식이 아닙니다. '지정' 기간을 쓰세요.`);
   }
   return {
     daily_last: data?.daily_last ?? null,
