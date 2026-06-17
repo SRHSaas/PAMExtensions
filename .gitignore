@@ -11,6 +11,9 @@ Thumbs.db
 node_modules/
 dist/
 
+# 릴리스 빌드 작업물(개인키 build/key.pem 포함 — 절대 커밋 금지)
+build/
+
 # 로컬 환경 / 시크릿 (확장에는 토큰/키를 넣지 않지만 방어적으로)
 .env
 .env.local

@@ -1,0 +1,14 @@
+{
+  "name": "pamextensions-build",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "PAMExtensions 릴리스 빌드 도구(.crx 서명·updates.xml·설치 스크립트 생성). 확장 런타임 소스는 extension/ 에 있음.",
+  "scripts": {
+    "keygen": "node scripts/keygen.mjs",
+    "build": "node scripts/build-crx.mjs"
+  },
+  "devDependencies": {
+    "crx3": "^1.1.3"
+  }
+}

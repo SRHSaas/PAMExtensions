@@ -1,0 +1,58 @@
+name: release
+
+# v* 태그를 push하면 .crx 서명 → updates.xml/install.bat 생성 → GitHub Release에 첨부.
+# 설치본은 release/latest/download/updates.xml 을 폴링하므로 새 릴리스마다 자동 업데이트된다.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm ci
+
+      - name: 서명키 복원(시크릿 → build/key.pem)
+        env:
+          CRX_PRIVATE_KEY: ${{ secrets.CRX_PRIVATE_KEY }}
+        run: |
+          if [ -z "$CRX_PRIVATE_KEY" ]; then
+            echo "::error::리포지토리 시크릿 CRX_PRIVATE_KEY 가 설정되지 않았습니다."
+            exit 1
+          fi
+          mkdir -p build
+          printf '%s\n' "$CRX_PRIVATE_KEY" > build/key.pem
+
+      - name: 태그 ↔ manifest 버전 일치 검증
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          MANIFEST_VER=$(node -p "require('./extension/manifest.json').version")
+          TAG_VER="${GITHUB_REF_NAME#v}"
+          echo "manifest=$MANIFEST_VER tag=$TAG_VER"
+          if [ "$MANIFEST_VER" != "$TAG_VER" ]; then
+            echo "::error::태그($TAG_VER)와 manifest 버전($MANIFEST_VER)이 다릅니다. manifest.json version을 올린 뒤 같은 버전으로 태그하세요."
+            exit 1
+          fi
+
+      - name: 빌드(.crx / updates.xml / install.bat)
+        run: npm run build
+
+      - name: Release 자산 업로드
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/PAMExtensions.crx
+            dist/updates.xml
+            dist/install.bat
+            dist/uninstall.bat
+          fail_on_unmatched_files: true

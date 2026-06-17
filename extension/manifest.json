@@ -3,6 +3,7 @@
   "name": "PAMExtensions",
   "description": "증권사 포트폴리오를 스크랩 → 정규화 → 로그인된 SRHFinance 세션으로 업로드하는 MV3 확장.",
   "version": "0.2.0",
+  "key": "MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAu0z+o8GgjM44cG7z9SnmX4zagiBhOE9ve7aVKGdh+LrzCGKCY12qdM1THeqLcmDYHu69aw2h1afonMpUoDq8NHCGIgyGsZog9XCmsUzL4G/NzdwtxYJ2B7JFMNROLFbEHY9FiHN+Um8I82atCGNx70wjRj+4lQ4SBkAUOQwj/ceBWYOBBvqnwRHtCurBQWqiLAlChnxmMsMFR7tz8qfXku2DO8qQozwvMEWEp67NkLrPDTKPt3OgkL9gtjxQ+zRmEnpYCbnSBAQjxicPQs9PKsRo0klOPnzJV/qhLhVcffZ768008KIBDJxqhQF78KWhZssicmbPoOwUjxDdpVxpaKyKEoXfB0IhExb06Y45L1FnpVC/WjmEF8H6YQyBbHmC88oXBPNfU4DBIp66WGpR89xPYyQbaArMSETvlKsahgTjYT4XmvdtywdqAGvjwgnclbWXnYlOKnv64PbZ2RorOY1cFyknXmPBdaFH+VyoT24ZddmAkVBtTSZlMTeYAl+/+eacPNFl6zLvNXZ6qQEFJx/ZQQX5uiF4jqTR69F2fPNC1chPYOO0hVcMno1BuEvqARj7+37QHgaBvb0S9YP0c/3kKRFyMesUUYQTfMLPQMdzNrPKaF9S+zUmEabmgu5mHlwGzPBp9tdQSueOhkgBtwIdnanOjMEdwcLYWDw6MVcCAwEAAQ==",
   "permissions": ["storage", "activeTab", "scripting"],
   "host_permissions": [
     "https://securities.miraeasset.com/*",
