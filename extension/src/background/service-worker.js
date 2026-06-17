@@ -208,14 +208,6 @@ function todayYmd() {
   return ymd(new Date());
 }
 
-/** "YYYY-MM-DD"의 다음날 "YYYY-MM-DD"(증분 시작일 = 마지막 수집일 + 1). */
-function nextDay(dateStr) {
-  const d = new Date(`${dateStr}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return null;
-  d.setDate(d.getDate() + 1);
-  return ymd(d);
-}
-
 /**
  * SRHFinance에서 마지막 수집일을 조회한다(자동 증분 기간 계산용).
  * GET {origin}/api/ingest/last-dates (세션 쿠키). 응답 { daily_last, tx_last }(둘 다 "YYYY-MM-DD"|null).
@@ -255,9 +247,9 @@ async function fetchLastDates(origin) {
 /**
  * rangeMode/target에 따라 target별 사용 기간을 계산한다.
  *   manual → 모든 target에 받은 range 그대로.
- *   auto   → last-dates 조회 후 target별 증분 기간:
- *            dailyAsset → {start: daily_last+1 또는 기본시작, end: 오늘}
- *            transaction → {start: tx_last+1 또는 기본시작, end: 오늘}
+ *   auto   → last-dates 조회 후 target별 증분 기간(시작일 = 마지막 수집일 자체, 그날 포함):
+ *            dailyAsset → {start: daily_last 또는 기본시작, end: 오늘}
+ *            transaction → {start: tx_last 또는 기본시작, end: 오늘}
  * @param {string[]} targets
  * @param {"auto"|"manual"} rangeMode
  * @param {{startDate?:string,endDate?:string}|undefined} manualRange
@@ -277,11 +269,15 @@ async function computeRanges(targets, rangeMode, manualRange, origin) {
   }
 
   // auto: 마지막 수집일 조회 → target별 증분.
+  // 시작일 = 마지막 수집일 자체(그날 포함, +1 아님). 이유:
+  //  (1) 거래내역: 마지막 업로드 시점 이후에도 같은 날짜의 거래가 더 발생할 수 있어 그날을 다시 수집해야 함.
+  //  (2) 일자별자산: 마지막 날 스냅샷이 장중(미확정) 값일 수 있어, 그날 종가 기준으로 다시 받아 덮어써야 함.
+  // 같은 날짜 재수집의 중복은 SRHFinance ingest의 upsert로 정리된다.
   const { daily_last, tx_last } = await fetchLastDates(origin);
   const today = todayYmd();
   for (const t of targets) {
     const last = t === SCRAPE_TARGET.TRANSACTION ? tx_last : daily_last;
-    const startDate = (last && nextDay(last)) || DEFAULT_START_DATE;
+    const startDate = last || DEFAULT_START_DATE;
     ranges[t] = { startDate, endDate: today };
   }
   return ranges;
