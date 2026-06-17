@@ -21,7 +21,57 @@ import {
 // 지원 증권사 → host 매칭 패턴. 새 증권사 추가 시 여기와 manifest를 함께 갱신.
 const BROKER_HOSTS = {
   [SOURCE.MIRAEASSET]: "securities.miraeasset.com",
+  [SOURCE.SHINHAN]: "shinhansec.com",
 };
+
+// 사람이 읽을 증권사 라벨/host 안내(가이드 문구·PIN 노출 판단에 사용).
+const BROKER_LABEL = {
+  [SOURCE.MIRAEASSET]: "미래에셋(securities.miraeasset.com)",
+  [SOURCE.SHINHAN]: "신한투자증권(shinhansec.com)",
+};
+
+// 거래(2차) PIN 입력칸을 노출할 증권사. 거래내역 조회 시 PIN을 요구하는 곳만.
+const PIN_SOURCES = new Set([SOURCE.SHINHAN]);
+
+// 증권사별 지원 스크랩 대상. 미구현 영역은 팝업에서 비활성화해 수집 실패를 막는다.
+// (신한은 현재 거래내역만 구현 — 잔고/일자별자산은 추후.)
+const SUPPORTED_TARGETS = {
+  [SOURCE.MIRAEASSET]: new Set([SCRAPE_TARGET.DAILY_ASSET, SCRAPE_TARGET.TRANSACTION]),
+  [SOURCE.SHINHAN]: new Set([SCRAPE_TARGET.DAILY_ASSET, SCRAPE_TARGET.TRANSACTION]),
+};
+
+// 거래 PIN을 **브라우저 세션 동안** 보관하는 키(매번 재입력 방지). chrome.storage.session 은
+// 메모리에만 있고 **디스크에 기록되지 않으며** 브라우저를 완전히 닫으면 사라진다(local보다 안전).
+// 정규 페이로드(pendingPayload)·진행상태에는 절대 들어가지 않는다 — 팝업↔세션스토리지 한정.
+const PIN_STORAGE_KEY = "pam:txnPin";
+
+/** 세션에 보관된 PIN 복원(없거나 미지원이면 ""). */
+async function loadSavedPin() {
+  try {
+    if (!chrome.storage.session) return "";
+    const o = await chrome.storage.session.get(PIN_STORAGE_KEY);
+    return o[PIN_STORAGE_KEY] || "";
+  } catch (e) {
+    return "";
+  }
+}
+/** PIN을 세션에 저장(빈 값이면 삭제). 디스크 저장 아님. */
+async function savePin(pin) {
+  try {
+    if (!chrome.storage.session) return;
+    if (pin) await chrome.storage.session.set({ [PIN_STORAGE_KEY]: pin });
+    else await chrome.storage.session.remove(PIN_STORAGE_KEY);
+  } catch (e) {
+    /* ignore */
+  }
+}
+
+/** 오늘 "YYYY-MM-DD"(date input 기본값용). */
+function todayStr() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
 
 const ORIGIN_SETTING_KEY = "srhfinanceOrigin";
 const DEFAULT_ORIGIN = "http://localhost:3000";
@@ -47,6 +97,8 @@ const els = {
   dateInputs: document.getElementById("dateInputs"),
   startDate: document.getElementById("startDate"),
   endDate: document.getElementById("endDate"),
+  pinRow: document.getElementById("pinRow"),
+  pinInput: document.getElementById("pinInput"),
   collectBtn: document.getElementById("collectBtn"),
   cancelBtn: document.getElementById("cancelBtn"),
   preview: document.getElementById("preview"),
@@ -54,6 +106,7 @@ const els = {
   downloadBtn: document.getElementById("downloadBtn"),
   uploadBtn: document.getElementById("uploadBtn"),
   probeBtn: document.getElementById("probeBtn"),
+  walkBtn: document.getElementById("walkBtn"),
   probeBox: document.getElementById("probeBox"),
   probeOut: document.getElementById("probeOut"),
   statusDot: document.getElementById("statusDot"),
@@ -87,17 +140,44 @@ async function detectContext() {
   }
 
   if (detectedSource) {
+    const label = BROKER_LABEL[detectedSource] || detectedSource;
     els.brokerBadge.textContent = detectedSource;
     els.brokerBadge.className = "badge on";
     els.guide.textContent =
-      "미래에셋에 로그인된 탭입니다. SRHFinance에도 로그인돼 있어야 업로드됩니다. 대상/기간을 고른 뒤 수집하세요.";
+      `${label}에 로그인된 탭입니다. SRHFinance에도 로그인돼 있어야 업로드됩니다. 대상/기간을 고른 뒤 수집하세요.`;
     els.probeBtn.disabled = false;
+    els.walkBtn.disabled = false;
   } else {
+    const known = Object.values(BROKER_LABEL).join(", ");
     els.brokerBadge.textContent = "대상 아님";
     els.brokerBadge.className = "badge off";
     els.guide.innerHTML =
-      "지원 증권사 페이지가 아닙니다. <b>미래에셋(securities.miraeasset.com)</b>에 로그인한 탭에서 다시 열어주세요.";
+      `지원 증권사 페이지가 아닙니다. 지원: <b>${known}</b>. 해당 증권사에 로그인한 탭에서 다시 열어주세요.`;
     els.probeBtn.disabled = true;
+    els.walkBtn.disabled = true;
+  }
+
+  // 거래 PIN 입력칸은 PIN을 요구하는 증권사(신한 등)에서만 노출.
+  const pinNeeded = !!(detectedSource && PIN_SOURCES.has(detectedSource));
+  els.pinRow.classList.toggle("hidden", !pinNeeded);
+  // 세션에 보관된 PIN 복원(매번 재입력 방지).
+  if (pinNeeded && !els.pinInput.value) {
+    const saved = await loadSavedPin();
+    if (saved) els.pinInput.value = saved;
+  }
+
+  // 미구현 스크랩 대상은 비활성화(예: 신한 일자별 자산). 지원 대상만 체크 가능.
+  const supported = detectedSource ? SUPPORTED_TARGETS[detectedSource] : null;
+  const dailyOk = !supported || supported.has(SCRAPE_TARGET.DAILY_ASSET);
+  const txOk = !supported || supported.has(SCRAPE_TARGET.TRANSACTION);
+  els.targetDaily.disabled = !dailyOk;
+  els.targetTx.disabled = !txOk;
+  if (!dailyOk) els.targetDaily.checked = false;
+  if (!txOk) els.targetTx.checked = false;
+  // 비활성 대상 라벨에 안내(중복 추가 방지).
+  const dailyLabel = document.querySelector('label[for="targetDaily"]');
+  if (dailyLabel) {
+    dailyLabel.textContent = "일자별 자산" + (dailyOk ? "" : " (이 증권사 미지원)");
   }
 
   const obj = await chrome.storage.sync.get(ORIGIN_SETTING_KEY);
@@ -197,10 +277,18 @@ function syncRangeModeUI() {
   const manual = rangeMode() === "manual";
   els.dateInputs.classList.toggle("hidden", !manual);
   els.autoNote.classList.toggle("hidden", manual);
+  // 지정 모드 진입 시 시작/종료일 기본값을 오늘로(비어 있을 때만 — 사용자 입력 보존).
+  if (manual) {
+    const t = todayStr();
+    if (!els.startDate.value) els.startDate.value = t;
+    if (!els.endDate.value) els.endDate.value = t;
+  }
 }
 
 els.modeAuto.addEventListener("change", syncRangeModeUI);
 els.modeManual.addEventListener("change", syncRangeModeUI);
+// PIN 입력 시 즉시 세션에 보관(다음 팝업 열 때 복원). 디스크 저장 아님.
+els.pinInput.addEventListener("input", () => savePin(els.pinInput.value.trim()));
 els.targetDaily.addEventListener("change", updateCollectEnabled);
 els.targetTx.addEventListener("change", updateCollectEnabled);
 
@@ -227,6 +315,12 @@ els.collectBtn.addEventListener("click", async () => {
       return;
     }
     payload.range = { startDate, endDate };
+  }
+
+  // 거래 PIN — PIN 요구 증권사에서 입력된 값만 메모리로 동봉(저장 안 함). 빈 값이면 생략.
+  if (PIN_SOURCES.has(detectedSource)) {
+    const pin = els.pinInput.value.trim();
+    if (pin) payload.pin = pin;
   }
 
   els.result.classList.add("hidden");
@@ -289,25 +383,31 @@ els.uploadBtn.addEventListener("click", () => {
 
 // ── (2b) 진단: 페이지 구조를 읽어 팝업에 표시(콘솔 없이 복사용) ───────────────
 
-els.probeBtn.addEventListener("click", async () => {
+async function runProbe(walk) {
   els.probeBox.classList.remove("hidden");
-  els.probeOut.value = "진단 중…";
+  els.probeOut.value = walk ? "자동 순회 진단 중… (여러 페이지를 도는 동안 잠시 걸립니다)" : "진단 중…";
   els.probeBtn.disabled = true;
+  els.walkBtn.disabled = true;
   try {
+    // walk 진단 시 PIN 페이지도 조회·덤프하도록 세션 PIN을 함께 전달(메모리만).
+    const pin = walk && PIN_SOURCES.has(detectedSource) ? els.pinInput.value.trim() : undefined;
     const res = await chrome.runtime.sendMessage({
       type: MSG.PROBE,
-      payload: { tabId: detectedTabId ?? undefined },
+      payload: { tabId: detectedTabId ?? undefined, source: detectedSource ?? undefined, walk, pin },
     });
-    els.probeOut.value =
-      (res && res.report) || "(보고서 없음) " + JSON.stringify(res || {});
+    els.probeOut.value = (res && res.report) || "(보고서 없음) " + JSON.stringify(res || {});
   } catch (err) {
     els.probeOut.value = "진단 실패: " + String(err?.message || err);
   } finally {
     els.probeBtn.disabled = detectedSource == null;
+    els.walkBtn.disabled = detectedSource == null;
     els.probeOut.focus();
     els.probeOut.select();
   }
-});
+}
+
+els.probeBtn.addEventListener("click", () => runProbe(false));
+els.walkBtn.addEventListener("click", () => runProbe(true));
 
 // ── background → popup 메시지 수신(STATUS / COLLECT_RESULT / UPLOAD_RESULT) ───
 // 장시간 작업(COLLECT/UPLOAD)은 응답이 아니라 이 브로드캐스트로 결과를 받는다.

@@ -173,6 +173,17 @@
       </div>
     </fieldset>
 
+    <!-- (2b-2) 거래 PIN (신한 등 거래내역 PIN 필요 증권사에서만 표시) -->
+    <fieldset id="pinRow" class="hidden">
+      <legend>거래 비밀번호 (PIN)</legend>
+      <div class="opt" style="flex-direction: column; align-items: stretch; gap: 4px;">
+        <input type="password" id="pinInput" inputmode="numeric" autocomplete="off"
+          placeholder="거래내역 조회용 PIN"
+          style="width: 100%; padding: 6px 8px; font-size: 12px; border: 1px solid var(--border); border-radius: 6px;" />
+        <span class="autoNote">로그인 비밀번호 아님. 브라우저 세션 동안 기억됩니다(디스크 저장 안 함, 브라우저 종료 시 삭제).</span>
+      </div>
+    </fieldset>
+
     <!-- (2c) 수집 시작 / 중단(수집 중에만 표시) -->
     <div class="row">
       <button id="collectBtn" disabled>수집</button>
@@ -192,8 +203,9 @@
     </div>
 
     <!-- (2b) 진단 (콘솔 없이 페이지 구조 확인) -->
-    <div class="row">
-      <button id="probeBtn" class="secondary" disabled>진단 (페이지 구조 확인)</button>
+    <div class="row btnRow">
+      <button id="probeBtn" class="secondary" disabled>진단 (현재 화면)</button>
+      <button id="walkBtn" class="secondary" disabled>전체 자동 진단</button>
     </div>
     <div id="probeBox" class="row hidden">
       <textarea id="probeOut" readonly rows="9"

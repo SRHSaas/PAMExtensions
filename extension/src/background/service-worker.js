@@ -45,6 +45,40 @@ import {
 } from "../normalize/index.js";
 import { uploadPayload } from "../upload/client.js";
 
+// ───────────────────────────────────────────────────────────────────────────
+// 증권사별 content script 파일 — 선언형 주입 실패 탭(확장 로드 전 열린 탭 등)에 executeScript
+// 폴백으로 주입할 때 어떤 어댑터 파일을 쓸지 source 로 고른다. 새 증권사 추가 시 여기에 더한다.
+//   index  : ISOLATED content script(SCRAPE_REQUEST/PROBE 처리).
+//   bridge : MAIN-world 페이지 브리지(page-bridge.js).
+//   host   : sender.tab.url 로 source 를 역추정(INJECT_BRIDGE 등 source 미동봉 메시지용).
+// ───────────────────────────────────────────────────────────────────────────
+const CONTENT_SCRIPTS = {
+  miraeasset: {
+    index: "src/content/miraeasset/index.js",
+    bridge: "src/content/miraeasset/page-bridge.js",
+    host: "securities.miraeasset.com",
+  },
+  shinhan: {
+    index: "src/content/shinhan/index.js",
+    bridge: "src/content/shinhan/page-bridge.js",
+    host: "shinhansec.com",
+  },
+};
+
+/** source 로 어댑터 파일셋 조회(미지정/미지원이면 miraeasset 기본 — 하위호환). */
+function adapterFor(source) {
+  return CONTENT_SCRIPTS[source] || CONTENT_SCRIPTS.miraeasset;
+}
+
+/** 탭 URL 로 증권사 source 를 역추정(host 매칭). 없으면 null. */
+function sourceFromUrl(url) {
+  const u = String(url || "");
+  for (const [source, cfg] of Object.entries(CONTENT_SCRIPTS)) {
+    if (u.includes(cfg.host)) return source;
+  }
+  return null;
+}
+
 /** options에서 설정하는 SRHFinance origin(미설정 시 dev 기본값). */
 const DEFAULT_ORIGIN = "http://localhost:3000";
 /** options(chrome.storage.sync)에 저장되는 origin 키. options.js와 공유. */
@@ -126,11 +160,11 @@ async function requestScrape(tabId, payload) {
   } catch (err) {
     // "Could not establish connection. Receiving end does not exist." —
     // 확장 로드/리로드 전부터 열려 있던 탭에는 선언형 content script가 자동 주입되지 않는다.
-    // scripting 권한 + 미래에셋 host_permission이 있으므로 직접 주입 후 1회 재시도한다.
+    // scripting 권한 + 해당 증권사 host_permission이 있으므로 직접 주입 후 1회 재시도한다.
     // (정상 로드된 탭이면 위 sendMessage가 바로 성공해 이 경로는 타지 않는다.)
     await chrome.scripting.executeScript({
       target: { tabId },
-      files: ["src/content/miraeasset/index.js"],
+      files: [adapterFor(payload?.source).index],
     });
     return await chrome.tabs.sendMessage(tabId, msg);
   }
@@ -144,14 +178,15 @@ async function requestScrape(tabId, payload) {
  * world 미지원 등)을 위한 폴백. content(ISOLATED)가 same-frame ping 무응답 시 INJECT_BRIDGE 로 요청.
  * 브리지는 멱등(중복 설치 가드)하므로 중복 주입돼도 안전하다.
  * @param {number} tabId
+ * @param {string} [source]  증권사 source(미지정 시 탭 URL로 역추정).
  * @returns {Promise<{ok:boolean, error?:string}>}
  */
-async function injectPageBridge(tabId) {
+async function injectPageBridge(tabId, source) {
   try {
     await chrome.scripting.executeScript({
       target: { tabId, frameIds: [0] }, // top 프레임만. 브리지가 contentframe 전역까지 탐색함.
       world: "MAIN",
-      files: ["src/content/miraeasset/page-bridge.js"],
+      files: [adapterFor(source).bridge],
     });
     return { ok: true };
   } catch (err) {
@@ -165,16 +200,18 @@ async function injectPageBridge(tabId) {
  * 대상 탭의 content script에 PROBE를 보내 페이지 구조 보고서를 받는다.
  * content script가 아직 없으면(확장 로드 전 열린 탭) 직접 주입 후 1회 재시도.
  * @param {number} tabId
+ * @param {string} [source]  증권사 source(미지정 시 탭 URL로 역추정).
+ * @param {{walk?:boolean, pin?:string}} [opts]  walk=true면 자동 순회 덤프. pin은 PIN 페이지 조회용(메모리).
  * @returns {Promise<{ ok:boolean, report:string }>}
  */
-async function probeTab(tabId) {
-  const msg = { type: MSG.PROBE };
+async function probeTab(tabId, source, opts = {}) {
+  const msg = { type: MSG.PROBE, payload: { walk: !!opts.walk, pin: opts.pin || "" } };
   try {
     return await chrome.tabs.sendMessage(tabId, msg);
   } catch (err) {
     await chrome.scripting.executeScript({
       target: { tabId },
-      files: ["src/content/miraeasset/index.js"],
+      files: [adapterFor(source).index],
     });
     return await chrome.tabs.sendMessage(tabId, msg);
   }
@@ -359,6 +396,9 @@ async function runCollect(req) {
         targets: [target],
         tabId,
         range: usedRanges[target],
+        // 거래(2차) PIN — 사용자가 수집 시작 시 입력한 값만 메모리로 전달. **저장하지 않는다**
+        // (pendingPayload/PipelineState 어디에도 들어가지 않음 — 이 메시지 인자로만 흐른다).
+        pin: req.pin,
       });
       // content가 루프 도중 중단을 감지하면 cancelled로 반환 → 저장하지 않고 중단 처리.
       if (result && result.cancelled) {
@@ -515,19 +555,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ ok: false, error: "발신 탭 식별 불가(sender.tab 없음)." });
         return false;
       }
-      injectPageBridge(tabId).then(sendResponse);
+      // source 미동봉 메시지 — 발신 탭 URL로 어느 증권사 브리지를 주입할지 역추정.
+      injectPageBridge(tabId, sourceFromUrl(sender?.tab?.url)).then(sendResponse);
       return true; // 비동기 응답.
     }
     case MSG.PROBE: {
       // popup → 진단 요청. payload.tabId(없으면 활성 탭)의 content에 위임해 보고서를 회신.
       (async () => {
         let tabId = message.payload?.tabId;
+        let source = message.payload?.source;
         if (tabId == null) {
           const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
           tabId = tab?.id;
+          if (!source) source = sourceFromUrl(tab?.url);
         }
         if (tabId == null) return { ok: false, report: "대상 탭을 찾을 수 없습니다." };
-        return probeTab(tabId);
+        return probeTab(tabId, source, {
+          walk: !!message.payload?.walk,
+          pin: message.payload?.pin || "",
+        });
       })()
         .then(sendResponse)
         .catch((e) => sendResponse({ ok: false, report: String(e?.message || e) }));

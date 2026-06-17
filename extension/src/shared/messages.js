@@ -130,6 +130,7 @@ export const SCRAPE_TARGET = {
  */
 export const SOURCE = {
   MIRAEASSET: "miraeasset",
+  SHINHAN: "shinhan",
 };
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -146,6 +147,9 @@ export const SOURCE = {
  * @property {Object} [range]           수집 기간(선택). content 어댑터가 해석.
  * @property {string} [range.startDate] "YYYY-MM-DD".
  * @property {string} [range.endDate]   "YYYY-MM-DD".
+ * @property {string} [pin]             거래(2차) 비밀번호. 사용자가 런 단위로 입력한 값만
+ *                                      메모리로 전달 — **chrome.storage 등 어디에도 저장 금지**.
+ *                                      로그인 비밀번호 아님. 일부 증권사(신한 등) 거래내역 조회용.
  */
 
 /**
@@ -215,6 +219,8 @@ export const SOURCE = {
  * @property {Object} [range]           rangeMode="manual"일 때 모든 target에 적용할 기간.
  * @property {string} [range.startDate] "YYYY-MM-DD".
  * @property {string} [range.endDate]   "YYYY-MM-DD".
+ * @property {string} [pin]             거래(2차) 비밀번호. 사용자가 수집 시작 시 입력한 값만
+ *                                      메모리로 전달 — **저장 금지**(런 종료 시 폐기). 로그인 PW 아님.
  */
 
 /**
