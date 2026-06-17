@@ -84,6 +84,12 @@ export const MSG = {
    * 콘솔(F12)이 막힌 사이트에서 페이지 구조를 확인하기 위한 용도. sendResponse { ok, report }.
    */
   PROBE: "PROBE",
+  /**
+   * popup → background. 진행 중인 수집(COLLECT)을 중단 요청. background가
+   * chrome.storage.local[STORAGE_KEY.CANCEL] 플래그를 켜고, runCollect(타깃 사이)와
+   * content script(날짜/계좌 루프)가 이 플래그를 보고 멈춘다. sendResponse {ok}.
+   */
+  CANCEL: "CANCEL",
 };
 
 /**
@@ -238,4 +244,6 @@ export const STORAGE_KEY = {
   PIPELINE_STATE: "pam:pipelineState",
   /** PendingPayload 저장 키(수집 결과 — 업로드 전 미리보기/업로드 입력). */
   PENDING_PAYLOAD: "pam:pendingPayload",
+  /** 수집 중단 요청 플래그(boolean). background가 set, runCollect·content 루프가 확인. */
+  CANCEL: "pam:cancelRequested",
 };

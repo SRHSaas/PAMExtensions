@@ -61,6 +61,21 @@ const SOURCE = Object.freeze({ MIRAEASSET: "miraeasset" });
 // 핫스왑(INJECT_BRIDGE 재주입)한다. 확장 리로드 후 페이지 새로고침 없이 브리지가 갱신되도록.
 const EXPECTED_BRIDGE_VER = 4; // ⚠ page-bridge.js VER 과 함께 증가.
 
+// 수집 중단 플래그 키 — ↔ src/shared/messages.js STORAGE_KEY.CANCEL (동기화 필수).
+// background가 CANCEL 요청 시 켜고, 아래 날짜/계좌 루프가 매 반복 확인해 즉시 멈춘다.
+const STORAGE_CANCEL = "pam:cancelRequested";
+/** 중단 감지 시 던지는 sentinel(handleScrape가 잡아 cancelled 결과로 변환). */
+const CANCELLED = "__PAM_CANCELLED__";
+/** 수집 중단이 요청됐는지 — chrome.storage.local 플래그 확인. */
+async function isCancelRequested() {
+  try {
+    const o = await chrome.storage.local.get(STORAGE_CANCEL);
+    return !!o[STORAGE_CANCEL];
+  } catch (e) {
+    return false;
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 페이지 경로 (원본 config.json) — openHp(path, secure)로 contentframe을 이동시킨다.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -598,6 +613,8 @@ async function scrapeDailyAsset(range = {}) {
 
   const out = [];
   for (const dateStr of dates) {
+    // 중단 요청 시 즉시 멈춘다(이미 수집한 날짜는 out에 남지만 handleScrape가 cancelled로 처리).
+    if (await isCancelRequested()) throw new Error(CANCELLED);
     try {
       await queryDailyByDate(dateStr);
       await expandDailyAccounts();
@@ -837,6 +854,8 @@ async function scrapeTransaction(range = {}) {
 
   const out = [];
   for (let ai = 0; ai < accounts.length; ai++) {
+    // 중단 요청 시 즉시 멈춘다.
+    if (await isCancelRequested()) throw new Error(CANCELLED);
     const acc = accounts[ai];
     try {
       // 계좌 변경 시 페이지 상태 초기화를 위해 두 번째 계좌부터 재이동(원본 흐름과 동일).
@@ -904,6 +923,10 @@ async function handleScrape(payload) {
     }
     return { source, target, ok: true, raw };
   } catch (err) {
+    // 사용자 중단 sentinel → cancelled 결과(background가 에러가 아닌 '중단'으로 처리).
+    if (String(err?.message || err) === CANCELLED) {
+      return { source, target, ok: false, cancelled: true, error: "수집이 중단되었습니다." };
+    }
     return {
       source,
       target,

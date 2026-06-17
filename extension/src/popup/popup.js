@@ -48,6 +48,7 @@ const els = {
   startDate: document.getElementById("startDate"),
   endDate: document.getElementById("endDate"),
   collectBtn: document.getElementById("collectBtn"),
+  cancelBtn: document.getElementById("cancelBtn"),
   preview: document.getElementById("preview"),
   previewCounts: document.getElementById("previewCounts"),
   downloadBtn: document.getElementById("downloadBtn"),
@@ -143,6 +144,10 @@ function renderStatus(stage, message) {
   }
   els.uploadBtn.disabled = busy;
   els.downloadBtn.disabled = busy;
+  // 수집(SCRAPE/NORMALIZE) 진행 중에만 '수집 중단' 버튼 표시. 새 진행 시작 시 재활성화.
+  const collecting = [STAGE.SCRAPING, STAGE.NORMALIZING].includes(stage);
+  els.cancelBtn.classList.toggle("hidden", !collecting);
+  if (collecting) els.cancelBtn.disabled = false;
   updateCollectEnabled();
 }
 
@@ -234,6 +239,16 @@ els.collectBtn.addEventListener("click", async () => {
   chrome.runtime.sendMessage({ type: MSG.COLLECT, payload }).catch(() => {});
 });
 
+// ── (3b) 수집 중단 → CANCEL ──────────────────────────────────────────────────
+
+els.cancelBtn.addEventListener("click", () => {
+  els.cancelBtn.disabled = true;
+  els.statusText.textContent = "중단 요청됨 — 현재 항목 후 멈춥니다…";
+  // fire-and-ack: 플래그만 켠다. 실제 중단은 background/content가 다음 날짜·계좌에서 처리하고
+  // COLLECT_RESULT(cancelled)로 알린다.
+  chrome.runtime.sendMessage({ type: MSG.CANCEL, payload: {} }).catch(() => {});
+});
+
 // ── (4) JSON 다운로드(로컬, 서버 안 거침) ────────────────────────────────────
 
 function timestampName() {
@@ -306,6 +321,9 @@ chrome.runtime.onMessage.addListener((message) => {
     if (p.ok) {
       renderStatus(STAGE.COLLECTED);
       renderPreview(p.counts);
+    } else if (p.cancelled) {
+      // 사용자 중단 — 에러가 아니라 대기 상태로 복귀(미리보기는 띄우지 않음).
+      renderStatus(STAGE.IDLE, p.error || "수집이 중단되었습니다.");
     } else {
       renderStatus(STAGE.ERROR, p.error || "수집 실패");
     }

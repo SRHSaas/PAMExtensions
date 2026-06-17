@@ -188,6 +188,26 @@ async function getOrigin() {
   return obj[ORIGIN_SETTING_KEY] || DEFAULT_ORIGIN;
 }
 
+// ── 수집 중단 플래그 ──────────────────────────────────────────────────────────
+// popup이 CANCEL을 보내면 켜진다. runCollect(타깃 사이)와 content script(날짜/계좌 루프)가
+// chrome.storage.local 의 이 플래그를 보고 멈춘다.
+
+/** 중단 플래그 set/clear. */
+async function setCancel(v) {
+  await chrome.storage.local.set({ [STORAGE_KEY.CANCEL]: !!v });
+}
+/** @returns {Promise<boolean>} 중단 요청됐는지. */
+async function isCancelled() {
+  const o = await chrome.storage.local.get(STORAGE_KEY.CANCEL);
+  return !!o[STORAGE_KEY.CANCEL];
+}
+/** 수집을 중단 상태로 정리(플래그 끄고 IDLE + cancelled 결과 브로드캐스트). */
+async function abortCollect() {
+  await setCancel(false);
+  await emitStatus(STAGE.IDLE, { message: "수집이 중단되었습니다." });
+  await emitCollectResult({ ok: false, cancelled: true, error: "수집이 중단되었습니다." });
+}
+
 // ── 날짜 헬퍼(자동 증분 기간 계산) ──────────────────────────────────────────
 
 /** 자동 기간의 기본 시작일(last-dates에 값이 없을 때). */
@@ -316,6 +336,9 @@ async function runCollect(req) {
     const targets = req.targets?.length ? req.targets : [SCRAPE_TARGET.DAILY_ASSET];
     const rangeMode = req.rangeMode === "manual" ? "manual" : "auto";
 
+    // 새 수집 시작 — 직전의 중단 플래그를 클리어.
+    await setCancel(false);
+
     // 0) 기간 계산(auto면 SRHFinance last-dates 조회 — 실패 시 사람이 읽을 메시지로 중단).
     const origin = await getOrigin();
     const usedRanges = await computeRanges(targets, rangeMode, req.range, origin);
@@ -325,6 +348,11 @@ async function runCollect(req) {
     /** @type {import("../shared/messages.js").ScrapeResultPayload[]} */
     const results = [];
     for (const target of targets) {
+      // 타깃 시작 전 중단 확인(content 루프도 자체적으로 확인하지만 타깃 사이에서도 멈춘다).
+      if (await isCancelled()) {
+        await abortCollect();
+        return;
+      }
       await emitStatus(STAGE.SCRAPING, { target });
       const result = await requestScrape(tabId, {
         source,
@@ -332,6 +360,11 @@ async function runCollect(req) {
         tabId,
         range: usedRanges[target],
       });
+      // content가 루프 도중 중단을 감지하면 cancelled로 반환 → 저장하지 않고 중단 처리.
+      if (result && result.cancelled) {
+        await abortCollect();
+        return;
+      }
       if (!result || !result.ok) {
         throw new Error(result?.error || `스크랩 실패(${target}).`);
       }
@@ -466,6 +499,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         .then(sendResponse)
         .catch((e) => sendResponse({ ok: false, error: String(e?.message || e) }));
       return true; // 비동기 응답.
+    }
+    case MSG.CANCEL: {
+      // popup → 진행 중인 수집 중단 요청. 플래그만 켜고 즉시 ack. 실제 중단은 runCollect와
+      // content 루프가 플래그를 보고 처리한다(다음 날짜/계좌 또는 타깃 경계에서 멈춤).
+      setCancel(true).catch(() => {});
+      sendResponse({ ok: true });
+      return false;
     }
     case MSG.INJECT_BRIDGE: {
       // content(ISOLATED)가 same-frame ping 무응답 시 MAIN-world 브리지 주입을 요청.
