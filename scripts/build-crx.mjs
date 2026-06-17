@@ -54,50 +54,52 @@ await crx3(['extension/manifest.json'], {
 const updateUrl = `${BASE}/updates.xml`;
 const forcelistData = `${extId};${updateUrl}`;
 
+// 주의: 배치 파일은 ASCII 전용으로 생성한다. 한글(UTF-8)을 넣으면
+// 한국어 Windows의 cmd.exe가 OEM 코드페이지(CP949)로 파싱하다 깨져
+// "내부/외부 명령이 아닙니다" 오류가 난다. 콘솔 메시지는 영문으로 둔다.
 const installBat = `@echo off
-chcp 65001 >nul
 setlocal
 REM ============================================================
-REM  PAMExtensions 설치기 (관리자 권한 불필요)
-REM  HKCU 정책으로 Chrome/Edge에 확장을 강제설치하고
-REM  GitHub Releases에서 자동 업데이트되도록 등록합니다.
-REM  확장 ID: ${extId}
+REM  PAMExtensions installer (no admin required)
+REM  Registers a per-user (HKCU) Chrome/Edge policy to
+REM  force-install the extension and auto-update from GitHub.
+REM  Do NOT download the .crx manually - this script handles it.
+REM  Extension ID: ${extId}
 REM ============================================================
 echo.
-echo  PAMExtensions 를 설치합니다...
+echo  Installing PAMExtensions...
 echo.
 
 set "DATA=${forcelistData}"
 
 REM --- Google Chrome ---
 reg add "HKCU\\Software\\Policies\\Google\\Chrome\\ExtensionInstallForcelist" /v ${POLICY_VALUE} /t REG_SZ /d "%DATA%" /f >nul
-if %errorlevel%==0 (echo   [OK] Chrome 정책 등록) else (echo   [!!] Chrome 정책 등록 실패)
+if %errorlevel%==0 (echo   [OK] Chrome policy set) else (echo   [!!] Chrome policy FAILED)
 
-REM --- Microsoft Edge (설치되어 있으면 적용) ---
+REM --- Microsoft Edge (applied if installed) ---
 reg add "HKCU\\Software\\Policies\\Microsoft\\Edge\\ExtensionInstallForcelist" /v ${POLICY_VALUE} /t REG_SZ /d "%DATA%" /f >nul
-if %errorlevel%==0 (echo   [OK] Edge 정책 등록) else (echo   [..] Edge 건너뜀)
+if %errorlevel%==0 (echo   [OK] Edge policy set) else (echo   [..] Edge skipped)
 
 echo.
-echo  완료! 다음을 진행하세요:
-echo    1) 열려 있는 Chrome/Edge 를 완전히 종료(모든 창)
-echo    2) 다시 실행
-echo    3) 주소창에 chrome://extensions 입력 → PAMExtensions 자동 설치 확인
+echo  Done. Next steps:
+echo    1. Fully close Chrome/Edge (every window)
+echo    2. Reopen the browser
+echo    3. Open chrome://extensions and confirm PAMExtensions is installed
 echo.
-echo  (즉시 확인: chrome://policy 에서 "정책 다시 로드" 클릭)
+echo  Tip: open chrome://policy and click "Reload policies" to apply now.
 echo.
 pause
 endlocal
 `;
 
 const uninstallBat = `@echo off
-chcp 65001 >nul
 setlocal
 echo.
-echo  PAMExtensions 강제설치 정책을 제거합니다...
+echo  Removing PAMExtensions force-install policy...
 echo.
 reg delete "HKCU\\Software\\Policies\\Google\\Chrome\\ExtensionInstallForcelist" /v ${POLICY_VALUE} /f >nul 2>&1
 reg delete "HKCU\\Software\\Policies\\Microsoft\\Edge\\ExtensionInstallForcelist" /v ${POLICY_VALUE} /f >nul 2>&1
-echo  완료. Chrome/Edge 를 재시작하면 확장이 제거됩니다.
+echo  Done. Restart Chrome/Edge to remove the extension.
 echo.
 pause
 endlocal
