@@ -7,12 +7,6 @@
 
 ## [Unreleased]
 
-### Changed
-- **자동(증분) 시작일을 `마지막 수집일 + 1` → `마지막 수집일 자체`(그날 포함)로** 변경. 이유: (1) 마지막
-  업로드 이후에도 **같은 날짜의 거래내역이 더 발생**할 수 있어 그날을 다시 받아야 하고, (2) **일자별 자산은
-  그날 종가** 기준이어야 하는데 직전 수집이 장중(미확정) 값일 수 있어 다시 받아 덮어써야 한다. 같은 날 재수집의
-  중복은 SRHFinance ingest의 upsert로 정리된다. (`computeRanges`의 `nextDay(last)` → `last`)
-
 ### Fixed
 - **content script 중복 주입 `Identifier 'MSG' has already been declared`**: 선언형 content_scripts
   주입과 background의 inject 폴백(executeScript)이 같은 문서에 두 번 실행돼 최상위 `const MSG`
